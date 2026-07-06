@@ -16,6 +16,39 @@ def _float_to_json_safe(value: float) -> float | None:
     return None
 
 
+def _crop_radiance_and_mask(
+    image_matrix: np.ndarray, coordenadas_validas: list[tuple[int, int]]
+) -> dict[str, Any]:
+    """
+    Recorta la matriz de radianza al bounding box de las coordenadas válidas y
+    construye la máscara binaria del municipio sobre ese recorte.
+    """
+    min_x = min(x for x, _ in coordenadas_validas)
+    max_x = max(x for x, _ in coordenadas_validas)
+    min_y = min(y for _, y in coordenadas_validas)
+    max_y = max(y for _, y in coordenadas_validas)
+
+    submatrix = image_matrix[min_y : max_y + 1, min_x : max_x + 1]
+    rows, cols = submatrix.shape
+
+    mask = np.zeros((rows, cols), dtype=int)
+    for x, y in coordenadas_validas:
+        mask[y - min_y, x - min_x] = 1
+
+    radiance_list: list[list[float | None]] = [
+        [_float_to_json_safe(float(v)) for v in row] for row in submatrix
+    ]
+    mask_list: list[list[int]] = [list(row) for row in mask]
+
+    return {
+        "bbox": {"min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y},
+        "rows": rows,
+        "cols": cols,
+        "radiance_matrix": radiance_list,
+        "municipality_mask": mask_list,
+    }
+
+
 def extract_radiance_matrix(
     downloaded_path: str,
     coordenadas_pixeles: list[tuple[int, int]],
@@ -54,35 +87,12 @@ def extract_radiance_matrix(
                 )
                 return None
 
-            # Bounding box
-            min_x = min(x for x, _ in coordenadas_validas)
-            max_x = max(x for x, _ in coordenadas_validas)
-            min_y = min(y for _, y in coordenadas_validas)
-            max_y = max(y for _, y in coordenadas_validas)
-
-            # Submatriz de radianza recortada al bounding box
-            submatrix = image_matrix[min_y : max_y + 1, min_x : max_x + 1]
-            rows, cols = submatrix.shape
-
-            # Máscara binaria: 1 = municipio, 0 = no municipio
-            mask = np.zeros((rows, cols), dtype=int)
-            for x, y in coordenadas_validas:
-                mask[y - min_y, x - min_x] = 1
-
-            # Convertir a listas anidadas con NaN/Inf -> None
-            radiance_list: list[list[float | None]] = [
-                [_float_to_json_safe(float(v)) for v in row] for row in submatrix
-            ]
-            mask_list: list[list[int]] = [list(row) for row in mask]
+            crop = _crop_radiance_and_mask(image_matrix, coordenadas_validas)
 
             return {
                 "municipio": municipio,
                 "fecha": date_obj,
-                "bbox": {"min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y},
-                "rows": rows,
-                "cols": cols,
-                "radiance_matrix": radiance_list,
-                "municipality_mask": mask_list,
+                **crop,
             }
     except Exception as e:
         print(f"Error extrayendo matriz de {downloaded_path}: {e}")
@@ -130,6 +140,8 @@ def process_image(downloaded_path, coordendas_pixeles, date_obj, municipio, dele
                 print(f"   - Coordenadas válidas: {len(coordenadas_validas)}")
                 print(f"   - Coordenadas totales: {len(coordendas_pixeles)}")
 
+            crop = _crop_radiance_and_mask(image_matrix, coordenadas_validas)
+
             datos = MedicionResultado(
                 Fecha=date_obj,
                 Municipio=municipio,
@@ -142,6 +154,11 @@ def process_image(downloaded_path, coordendas_pixeles, date_obj, municipio, dele
                 Percentil_25_de_radianza=float(np.percentile(pixeles_imagen, 25)),
                 Percentil_50_de_radianza=float(np.percentile(pixeles_imagen, 50)),
                 Percentil_75_de_radianza=float(np.percentile(pixeles_imagen, 75)),
+                Bbox=crop["bbox"],
+                Filas=crop["rows"],
+                Columnas=crop["cols"],
+                Matriz_de_radianza=crop["radiance_matrix"],
+                Mascara_municipio=crop["municipality_mask"],
             )
         
         return datos
