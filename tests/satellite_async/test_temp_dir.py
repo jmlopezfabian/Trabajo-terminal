@@ -1,0 +1,99 @@
+"""Tests for the staging directory used to download HDF5 files.
+
+It used to be the literal relative path "../temp", so where a several-hundred-MB
+download landed depended on the process's working directory. These tests pin
+the replacement down: absolute, configurable, and independent of the cwd.
+"""
+import importlib
+import re
+from pathlib import Path
+
+import pytest
+
+from satellite_async import config
+
+
+def _reload_config(monkeypatch, temp_dir=None):
+    """Re-import config with VNP46A1_TEMP_DIR set (or unset)."""
+    if temp_dir is None:
+        monkeypatch.delenv("VNP46A1_TEMP_DIR", raising=False)
+    else:
+        monkeypatch.setenv("VNP46A1_TEMP_DIR", str(temp_dir))
+    return importlib.reload(config)
+
+
+@pytest.fixture(autouse=True)
+def restore_config():
+    """Leave the module as we found it for the rest of the suite."""
+    yield
+    importlib.reload(config)
+
+
+def test_temp_dir_is_absolute_by_default(monkeypatch):
+    cfg = _reload_config(monkeypatch)
+    assert cfg.TEMP_DIR.is_absolute()
+
+
+def test_temp_dir_honours_the_environment(monkeypatch, tmp_path):
+    target = tmp_path / "staging"
+    cfg = _reload_config(monkeypatch, target)
+    assert cfg.TEMP_DIR == target.resolve()
+
+
+def test_temp_dir_does_not_depend_on_the_cwd(monkeypatch, tmp_path):
+    """The actual bug: the same code resolved to different directories."""
+    cfg = _reload_config(monkeypatch)
+    from_here = cfg.TEMP_DIR
+
+    elsewhere = tmp_path / "some" / "other" / "place"
+    elsewhere.mkdir(parents=True)
+    monkeypatch.chdir(elsewhere)
+    cfg = _reload_config(monkeypatch)
+
+    assert cfg.TEMP_DIR == from_here
+
+
+def test_temp_path_creates_the_directory_on_first_use(monkeypatch, tmp_path):
+    target = tmp_path / "not-yet-there"
+    cfg = _reload_config(monkeypatch, target)
+    assert not target.exists()
+
+    path = cfg.temp_path("VNP46A1_2024-01-15_h08v07.h5")
+
+    assert target.is_dir()
+    assert path.parent == target.resolve()
+    assert path.name == "VNP46A1_2024-01-15_h08v07.h5"
+    assert path.is_absolute()
+
+
+def test_download_and_cleanup_agree_on_the_directory(monkeypatch, tmp_path):
+    """Downloads and cleanup used to be able to point at different places."""
+    target = tmp_path / "staging"
+    _reload_config(monkeypatch, target)
+
+    from satellite_async import satellite_async as sa
+
+    importlib.reload(sa)
+
+    staged = sa.temp_path("2024-01-15_h08v07.h5")
+    staged.write_bytes(b"not really hdf5")
+    assert staged.exists()
+
+    monkeypatch.chdir(tmp_path)  # cleanup must not care where we are
+    sa.cleanup_temp_files()
+
+    assert not staged.exists()
+
+
+def test_no_relative_temp_paths_remain():
+    """Guard against a cwd-relative temp path being assigned again.
+
+    Matches assignments such as `temp_dir = "../temp"`, not prose mentioning
+    the old path in a comment or docstring.
+    """
+    import satellite_async
+
+    source_dir = Path(satellite_async.__file__).parent
+    pattern = re.compile(r"""=\s*f?["'][^"']*\.\./temp""")
+    offenders = [path.name for path in source_dir.glob("*.py") if pattern.search(path.read_text())]
+    assert offenders == []

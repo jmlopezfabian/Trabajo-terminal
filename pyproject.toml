@@ -4,15 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "satellite_async"
-version = "0.1.0"
+version = "0.2.0"
 description = "VNP46A1 satellite nighttime radiance processing"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy>=1.21.0",
     "pandas>=2.0",
     "aiohttp>=3.9",
     "h5py>=3.10",
+    "pydantic>=2.0",
+    "beautifulsoup4>=4.10",
+    "python-dotenv>=1.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["satellite_async*"]
+# vnp46a1_data ships the municipality coordinate tables that satellite_async
+# loads at import time (config.PIXELES_MUNICIPIOS). Without it here, an
+# installed copy of this package imports fine and then fails at runtime.
+include = ["satellite_async*", "vnp46a1_data*"]
+
+[tool.setuptools.package-data]
+vnp46a1_data = ["*.json"]

@@ -4,7 +4,7 @@ import os
 import glob
 from typing import Callable
 
-from .config import PIXELES_MUNICIPIOS
+from .config import PIXELES_MUNICIPIOS, TEMP_DIR, temp_path
 from .utils import normalize_municipio, parse_date, load_coord_data
 from .downloader import find_file, download_file
 from .processing import process_image
@@ -15,8 +15,13 @@ def chunk_list(lst, chunk_size):
     return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
 def cleanup_temp_files():
-    """Limpia archivos .h5 residuales en el directorio temp"""
-    temp_dir = "../temp"
+    """Limpia archivos .h5 residuales en el directorio temp.
+
+    Usa la ruta absoluta TEMP_DIR (configurable con VNP46A1_TEMP_DIR); antes
+    era "../temp" relativo al cwd, asi que podia limpiar un directorio
+    distinto del que se habia usado para descargar.
+    """
+    temp_dir = str(TEMP_DIR)
     if os.path.exists(temp_dir):
         h5_files = glob.glob(os.path.join(temp_dir, "*.h5"))
         for file_path in h5_files:
@@ -123,7 +128,7 @@ class SatelliteImagesAsync:
             print(f"❌ No se encontró archivo H5 para: {year}-{day} ({cuadrante})")
             return None
             
-        save_path = f"../temp/{date_obj}_{cuadrante}.h5"
+        save_path = str(temp_path(f"{date_obj}_{cuadrante}.h5"))
         print(f"📥 Descargando: {h5_url} -> {save_path}")
         downloaded_path = await download_file(session, h5_url, save_path)
         

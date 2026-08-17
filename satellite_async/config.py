@@ -1,11 +1,31 @@
 import os
+import tempfile
 from dotenv import load_dotenv
 from importlib import resources
+from pathlib import Path
 
 load_dotenv()
 
 BASE_URL = "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/VNP46A1/{year}/{day}/"
 IMAGE_PATH = "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m"
+
+# Where the downloaded HDF5 files (hundreds of MB each) are staged.
+#
+# This used to be the literal relative path "../temp", which resolved against
+# whatever the current working directory happened to be — so the same code
+# wrote to a different place depending on how the process was started, and in a
+# container could fill the root filesystem instead of the intended volume.
+# It is now an absolute path: set VNP46A1_TEMP_DIR to control it, otherwise it
+# falls back to a subdirectory of the system temp dir, which is always writable
+# and never depends on the cwd.
+_DEFAULT_TEMP_DIR = Path(tempfile.gettempdir()) / "vnp46a1"
+TEMP_DIR = Path(os.getenv("VNP46A1_TEMP_DIR") or _DEFAULT_TEMP_DIR).expanduser().resolve()
+
+
+def temp_path(filename: str) -> Path:
+    """Absolute path for a staged file, creating TEMP_DIR on first use."""
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    return TEMP_DIR / filename
 
 
 def find_image_path(hdf_file) -> str:
