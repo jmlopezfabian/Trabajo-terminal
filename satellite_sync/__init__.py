@@ -26,7 +26,7 @@ from .utils import (
     parse_date,
     extraer_coordenadas,
     left_right_coords,
-    polygon_centroid
+    polygon_centroid,
 )
 from .downloader import find_file, download_file
 from .image_processor import (

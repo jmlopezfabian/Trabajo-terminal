@@ -11,7 +11,6 @@ from satellite_sync.utils import (
     parse_date,
     distancia_puntos,
     polygon_centroid,
-    es_borde,
     extraer_coordenadas,
     load_coord_data,
     left_right_coords,
@@ -74,16 +73,6 @@ class TestPolygonCentroid:
         cx, cy = polygon_centroid(vertices)
         assert cx == pytest.approx(1.0)
         assert cy == pytest.approx(2.0 / 3.0)
-
-
-class TestEsBorde:
-    def test_point_on_border(self):
-        bordes = [(0, 0), (1, 0), (1, 1)]
-        assert es_borde(1, 0, bordes) is True
-
-    def test_point_not_on_border(self):
-        bordes = [(0, 0), (1, 0), (1, 1)]
-        assert es_borde(5, 5, bordes) is False
 
 
 # --- I/O with mocks ---

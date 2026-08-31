@@ -88,7 +88,3 @@ def polygon_centroid(vertices: List[Tuple[float, float]]) -> Tuple[float, float]
     Cx /= (6 * A)
     Cy /= (6 * A)
     return (Cx, Cy)
-
-def es_borde(x: int, y: int, bordes: List[Tuple[int, int]]) -> bool:
-    """Verifica si un punto está en el borde del polígono"""
-    return (x, y) in bordes 

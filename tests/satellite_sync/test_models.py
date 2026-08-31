@@ -34,7 +34,6 @@ class TestMedicionResultado:
         data = {
             "Fecha": date(2024, 1, 1),
             "Cantidad_de_pixeles": 100,
-            "Cantidad_de_pixeles_principales": 80,
             "Suma_de_radianza": 500.0,
             "Media_de_radianza": 5.0,
             "Desviacion_estandar_de_radianza": 2.0,
@@ -54,7 +53,6 @@ class TestMedicionResultado:
         data = {
             "Fecha": date(2024, 1, 15),
             "Cantidad_de_pixeles": 50,
-            "Cantidad_de_pixeles_principales": 50,
             "Suma_de_radianza": 250.0,
             "Media_de_radianza": 5.0,
             "Desviacion_estandar_de_radianza": 1.0,
@@ -75,7 +73,7 @@ class TestMedicionResultado:
             MedicionResultado(
                 Fecha=date(2024, 1, 1),
                 Cantidad_de_pixeles=10,
-                # missing Cantidad_de_pixeles_principales and others
+                # missing Suma_de_radianza and the rest
             )
 
     def test_invalid_type_raises(self):
@@ -83,7 +81,6 @@ class TestMedicionResultado:
             MedicionResultado(
                 Fecha="not-a-date",
                 Cantidad_de_pixeles=10,
-                Cantidad_de_pixeles_principales=10,
                 Suma_de_radianza=1.0,
                 Media_de_radianza=1.0,
                 Desviacion_estandar_de_radianza=0.0,

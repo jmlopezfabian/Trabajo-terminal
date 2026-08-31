@@ -41,7 +41,6 @@
           <li><a href="#recorte">Recorte y redimensión</a></li>
           <li><a href="#cierre">Cierre de bordes</a></li>
           <li><a href="#pixeles">Extracción de píxeles</a></li>
-          <li><a href="#huerfanos">Píxeles huérfanos</a></li>
           <li><a href="#estadisticas">Métricas estadísticas</a></li>
         </ol>
       </li>
@@ -138,7 +137,7 @@
       $$\text{longitud} = h \cdot 10 - 180 \tag{1}$$
     </div>
     <div class="math-block">
-      $$\text{latitud} = v \cdot (-10) - 90 \tag{2}$$
+      $$\text{latitud} = 90 - v \cdot 10 \tag{2}$$
     </div>
 
     <p>Por ejemplo, para el cuadrante $h08v07$ de la Ciudad de México, estas fórmulas producen $-100°$ de longitud y $20°$ de latitud, coherentes con el valor de $UpperLeftPointMtrs = (-100{,}000{,}000,\ 20{,}000{,}000)$ encontrado en los metadatos.</p>
@@ -192,26 +191,21 @@
 
     <h3 class="subsection" id="pixeles">Extracción de píxeles interiores del municipio</h3>
 
-    <p>Una vez definido el borde cerrado $b = (b_x, b_y)$, se identifican todos los píxeles que pertenecen al interior del polígono mediante una búsqueda en amplitud (BFS, <em>Breadth-First Search</em>) de cuatro vecinos. El punto de partida de la búsqueda debe estar garantizadamente dentro del polígono; para ello se calcula el centroide geométrico $C = (c_x, c_y)$ del polígono de borde mediante la fórmula de Shoelace:</p>
+    <p>Una vez definido el borde cerrado $b = (b_x, b_y)$, se identifican los píxeles interiores del municipio con una única búsqueda en amplitud (BFS, <em>Breadth-First Search</em>) de cuatro vecinos que se propaga <em>desde afuera hacia adentro</em>. La búsqueda se siembra en todos los píxeles del marco de la imagen recortada y se detiene al alcanzar cualquier coordenada de borde, de modo que recorre exactamente el exterior del polígono. El interior es entonces el complemento:</p>
 
     <div class="math-block">
-      $$c_x = \frac{1}{6A} \sum_{i=1}^{n} (b_{x_i} + b_{x_{i+1}})(b_{x_i} b_{y_{i+1}} - b_{x_{i+1}} b_{y_i}) \tag{9}$$
-    </div>
-    <div class="math-block">
-      $$c_y = \frac{1}{6A} \sum_{i=1}^{n} (b_{y_i} + b_{y_{i+1}})(b_{x_i} b_{y_{i+1}} - b_{x_{i+1}} b_{y_i}) \tag{10}$$
+      $$\text{Interior} = \overline{\text{Exterior} \cup b} \tag{9}$$
     </div>
 
-    <p>donde $(b_x, b_y)$ son los $n$ puntos del borde y $A$ el área del polígono que forman. La BFS se inicia desde el centroide y se expande en las cuatro direcciones cardinales, deteniéndose al alcanzar cualquier coordenada de borde. Cada píxel interior alcanzado es registrado y su valor de radianza $I_{j,k}$ se agrega al vector de luminosidad del municipio $NTL_{i,j}$.</p>
+    <p>es decir, todo píxel de la imagen recortada que no forma parte del borde y que no es alcanzable desde el marco. Cada píxel interior así identificado se registra y su valor de radianza $I_{j,k}$ se agrega al vector de luminosidad del municipio $NTL_{i,j}$.</p>
 
-    <h3 class="subsection" id="huerfanos">Detección de píxeles huérfanos</h3>
+    <p>Esta formulación no requiere ningún punto semilla dentro del polígono y, por lo tanto, elimina el cálculo del centroide geométrico que empleaban versiones anteriores del procesamiento. Sembrar la BFS en el centroide tenía dos problemas: en municipios con geometría cóncava el centroide puede caer <em>fuera</em> del polígono, en cuyo caso la búsqueda se desbordaba e incorporaba toda la imagen recortada; y aun cuando caía dentro, solo alcanzaba la componente conexa que lo contenía, dejando fuera las regiones internas desconectadas —los llamados <em>píxeles huérfanos</em>— que debían recuperarse en un segundo recorrido. Al partir del exterior, ambas situaciones quedan resueltas en un solo paso: las regiones internas desconectadas, como las de Oaxaca de Juárez, tampoco son alcanzables desde el marco y por construcción quedan clasificadas como interiores.</p>
 
-    <p>La BFS desde el centroide funciona correctamente cuando todos los píxeles del polígono están conectados entre sí. Sin embargo, existen casos —como el de Oaxaca de Juárez— en los que la geometría del municipio produce regiones internas que no están físicamente conectadas al componente que contiene el centroide. Estos píxeles no son alcanzados por la primera BFS y quedarían excluidos del cómputo.</p>
-
-    <p>Para detectar y recuperar estos <em>píxeles huérfanos</em>, se realiza una segunda búsqueda con lógica inversa: se inicia desde todos los píxeles ubicados en el borde de la imagen recortada (el marco exterior), excluyendo aquellos que forman parte del borde del polígono o que ya fueron identificados como interiores. Esta búsqueda externa recorre y marca todas las áreas alcanzables desde el exterior. Al finalizar, los píxeles que no fueron visitados por ninguna de las dos búsquedas —ni la interior desde el centroide ni la exterior desde el marco— corresponden necesariamente a regiones internas del polígono que no estaban conectadas al centroide. Estos píxeles huérfanos se añaden al vector $NTL_{i,j}$ junto con los píxeles principales.</p>
+    <p>En la implementación, la propagación exterior se resuelve de forma vectorizada etiquetando las componentes conexas de cuatro vecinos del complemento del borde y descartando aquellas que tocan el marco de la imagen, lo que evita recorrer la cola de la BFS en Python.</p>
 
     <figure>
-      <img src="assets/Flujo_pixeles_hueco.PNG" alt="Proceso de detección de píxeles huérfanos">
-      <figcaption><strong>Figura 2.</strong> Proceso de identificación de píxeles huérfanos. La BFS exterior (rojo) marca todas las regiones alcanzables desde el borde de la imagen. Las zonas no visitadas por ninguna búsqueda —huérfanas— se recuperan y añaden a la selección del municipio.</figcaption>
+      <img src="assets/Flujo_pixeles_hueco.PNG" alt="Proceso de identificación de píxeles interiores desde el exterior">
+      <figcaption><strong>Figura 2.</strong> Identificación de los píxeles del municipio. La búsqueda exterior (rojo) marca todas las regiones alcanzables desde el marco de la imagen; lo que no alcanza y no es borde constituye el interior del municipio, incluidas las regiones internas desconectadas entre sí.</figcaption>
     </figure>
 
     <h3 class="subsection" id="estadisticas">Cómputo de métricas estadísticas</h3>
@@ -249,7 +243,7 @@
 
     <p>La identificación de los píxeles que pertenecen a un municipio —etapas 3 a 7 de la metodología— produce siempre el mismo resultado, puesto que la delimitación geográfica de un municipio dentro de un cuadrante satelital es estática. Recalcular estas coordenadas en cada ejecución diaria resultaba redundante.</p>
 
-    <p>Para eliminar este costo, se desarrolló un proceso independiente que ejecuta el mapeo geográfico una única vez por municipio: obtiene el conjunto completo de coordenadas de píxeles correspondientes —incluyendo la detección de píxeles huérfanos— y almacena el resultado en un archivo de consulta estructurado. En ejecuciones posteriores, el proceso principal omite completamente las etapas de transformación geométrica y lee directamente las coordenadas desde dicho archivo, reduciendo cada iteración diaria a la descarga del archivo HDF5, la extracción de los valores de radianza en las coordenadas prealmacenadas y el cómputo de estadísticas.</p>
+    <p>Para eliminar este costo, se desarrolló un proceso independiente que ejecuta el mapeo geográfico una única vez por municipio: obtiene el conjunto completo de coordenadas de píxeles interiores y almacena el resultado en un archivo de consulta estructurado. En ejecuciones posteriores, el proceso principal omite completamente las etapas de transformación geométrica y lee directamente las coordenadas desde dicho archivo, reduciendo cada iteración diaria a la descarga del archivo HDF5, la extracción de los valores de radianza en las coordenadas prealmacenadas y el cómputo de estadísticas.</p>
 
     <h3 class="subsection" id="asincrono">Procesamiento asíncrono por lotes</h3>
 
@@ -343,7 +337,7 @@
     <p>Este conjunto de datos $NTL_{i,j}$ sirve como insumo para la estimación de la elasticidad entre luminosidad nocturna y PIB, siguiendo el marco estadístico propuesto por Henderson <em>et al.</em> [1], donde se relaciona el crecimiento en luces con el crecimiento en ingresos reales mediante:</p>
 
     <div class="math-block">
-      $$\log(PIB_{j,t}) = \hat{\alpha} + \hat{\beta}\,\log(NTL_{j,t}) + \epsilon_{j,t} \tag{11}$$
+      $$\log(PIB_{j,t}) = \hat{\alpha} + \hat{\beta}\,\log(NTL_{j,t}) + \epsilon_{j,t} \tag{10}$$
     </div>
 
     <p>donde $\hat{\beta}$ representa la elasticidad entre la luminosidad nocturna productiva y el PIB municipal, y $\epsilon_{j,t}$ captura tanto el error de medición del satélite como la variabilidad no explicada por la NTL.</p>

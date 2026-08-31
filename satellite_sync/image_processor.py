@@ -1,6 +1,7 @@
 import numpy as np
+from scipy import ndimage
 from typing import Tuple, List
-from .utils import distancia_puntos, polygon_centroid, es_borde
+from .utils import distancia_puntos
 
 def aumentar_imagen(image_matrix: np.ndarray, factor_escala: int) -> np.ndarray:
     """Aumenta el tamaño de una imagen por un factor de escala"""
@@ -82,124 +83,43 @@ def completar_bordes(nuevos_x_pixels: np.ndarray, nuevos_y_pixels: np.ndarray) -
 
     return list(coordenadas_bordes)
 
-def get_pixeles(imagen: np.ndarray, centroide: Tuple[float, float], 
-                bordes: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+def get_pixeles(imagen: np.ndarray, bordes: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
     """
-    Obtiene todos los píxeles dentro del polígono usando flood fill desde el centroide.
-    
-    Args:
-        imagen: Matriz de la imagen
-        centroide: Coordenadas del centroide del polígono
-        bordes: Lista de coordenadas que forman el borde del polígono
-        
-    Returns:
-        Lista de coordenadas de píxeles dentro del polígono
-    """
-    x_centroide, y_centroide = centroide
-    
-    matriz_visitados = np.zeros(imagen.shape, dtype=bool)
-    matriz_visitados[int(y_centroide), int(x_centroide)] = True
-    pixeles_imagen = [(int(x_centroide), int(y_centroide))]
+    Obtiene todos los píxeles interiores del municipio en un solo paso.
 
-    queue = [(int(x_centroide), int(y_centroide))]
-    while queue:
-        x, y = queue.pop(0)
-        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            x_nuevo = x + dx
-            y_nuevo = y + dy
-            if (0 <= x_nuevo < imagen.shape[1] and
-                0 <= y_nuevo < imagen.shape[0] and
-                not matriz_visitados[y_nuevo, x_nuevo] and
-                not es_borde(x_nuevo, y_nuevo, bordes)):
-                matriz_visitados[y_nuevo, x_nuevo] = True
-                queue.append((x_nuevo, y_nuevo))
-                pixeles_imagen.append((x_nuevo, y_nuevo))
-    
-    return pixeles_imagen 
+    En lugar de sembrar un flood fill en el centroide (que puede caer fuera del
+    polígono si este es cóncavo, y que deja "huérfanas" las regiones interiores
+    no conectadas con la semilla), se inunda desde el marco de la imagen hacia
+    adentro. Todo lo que el exterior no alcanza y no es borde es interior, sin
+    importar en cuántas componentes conexas esté partido.
 
-def detect_orphan_pixels(imagen: np.ndarray, bordes: List[Tuple[int, int]], 
-                        main_pixels: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """
-    Detects orphan pixels inside borders that were not selected by the main BFS.
-    Uses flood fill from image borders to mark outside pixels, then finds remaining unvisited pixels.
-    
     Args:
-        imagen: Image matrix
-        bordes: List of coordinates that form the polygon border
-        main_pixels: List of pixels already selected by the main BFS
-        
+        imagen: Matriz de la imagen recortada
+        bordes: Lista de coordenadas (x, y) que forman el borde del polígono
+
     Returns:
-        List of orphan pixel coordinates
+        Lista de coordenadas (x, y) de los píxeles dentro del polígono
     """
     height, width = imagen.shape
-    visited = np.zeros((height, width), dtype=bool)
-    orphan_pixels = []
-    
-    # Create sets for faster lookup
-    main_pixels_set = set(main_pixels)
-    bordes_set = set(bordes)
-    
-    # Mark main pixels as visited
-    for x, y in main_pixels:
-        if 0 <= x < width and 0 <= y < height:
-            visited[y, x] = True
-    
-    # Mark border pixels as visited
+
+    # Máscara de borde: O(1) por consulta, en vez de buscar en una lista
+    mascara_borde = np.zeros((height, width), dtype=bool)
     for x, y in bordes:
         if 0 <= x < width and 0 <= y < height:
-            visited[y, x] = True
-    
-    # Flood fill from image borders to mark all outside pixels as visited
-    # This will leave only inside pixels unvisited
-    flood_fill_from_borders(visited, bordes_set, height, width)
-    
-    # Find all remaining unvisited pixels - these are orphan pixels inside the polygon
-    for y in range(height):
-        for x in range(width):
-            if not visited[y, x]:
-                orphan_pixels.append((x, y))
-    
-    return orphan_pixels
+            mascara_borde[y, x] = True
 
-def flood_fill_from_borders(visited: np.ndarray, bordes_set: set, height: int, width: int):
-    """
-    Performs flood fill from image borders to mark all outside pixels as visited.
-    
-    Args:
-        visited: Visited matrix
-        bordes_set: Set of border pixel coordinates
-        height, width: Image dimensions
-    """
-    # Start flood fill from all border pixels of the image
-    queue = []
-    
-    # Add all border pixels of the image to the queue
-    for x in range(width):
-        if not visited[0, x] and (x, 0) not in bordes_set:  # Top border
-            queue.append((x, 0))
-        if not visited[height-1, x] and (x, height-1) not in bordes_set:  # Bottom border
-            queue.append((x, height-1))
-    
-    for y in range(height):
-        if not visited[y, 0] and (0, y) not in bordes_set:  # Left border
-            queue.append((0, y))
-        if not visited[y, width-1] and (width-1, y) not in bordes_set:  # Right border
-            queue.append((width-1, y))
-    
-    # 4-connected neighbors for flood fill
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    
-    while queue:
-        x, y = queue.pop(0)
-        
-        if visited[y, x] or (x, y) in bordes_set:
-            continue
-            
-        visited[y, x] = True
-        
-        for dx, dy in directions:
-            nx, ny = x + dx, y + dy
-            
-            if (0 <= nx < width and 0 <= ny < height and 
-                not visited[ny, nx] and (nx, ny) not in bordes_set):
-                queue.append((nx, ny))
+    # Componentes conexas (4-vecinos) de todo lo que no es borde
+    libre = ~mascara_borde
+    etiquetas, _ = ndimage.label(libre)
+
+    # Las componentes que tocan el marco de la imagen son el exterior
+    marco = np.concatenate([
+        etiquetas[0, :], etiquetas[-1, :], etiquetas[:, 0], etiquetas[:, -1]
+    ])
+    etiquetas_exteriores = np.unique(marco)
+    etiquetas_exteriores = etiquetas_exteriores[etiquetas_exteriores != 0]
+
+    interior = libre & ~np.isin(etiquetas, etiquetas_exteriores)
+
+    ys, xs = np.nonzero(interior)
+    return list(zip(xs.tolist(), ys.tolist()))

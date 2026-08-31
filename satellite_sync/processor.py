@@ -10,9 +10,9 @@ import os
 from typing import Optional, Tuple, List
 from .config import IMAGE_PATH, find_image_path
 from .models import MedicionResultado
-from .utils import parse_date, extraer_coordenadas, left_right_coords, polygon_centroid
+from .utils import parse_date, extraer_coordenadas, left_right_coords
 from .downloader import find_file, download_file
-from .image_processor import recortar_imagen, completar_bordes, get_pixeles, detect_orphan_pixels
+from .image_processor import recortar_imagen, completar_bordes, get_pixeles
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -163,34 +163,13 @@ class SatelliteProcessor:
                         ax[1][1].scatter(bordes_completos_x, bordes_completos_y, c='red', s=2, alpha=0.7)
                     ax[1][1].set_title("Imagen con bordes completos")
 
-                
-                # Calcular centroide y obtener píxeles principales
-                cx, cy = polygon_centroid(coordenadas_bordes)
-                coordenadas_pixeles_principales = get_pixeles(imagen_recortada, (cx, cy), coordenadas_bordes)
-                
-                # Detectar píxeles huérfanos (zonas no seleccionadas completamente rodeadas por bordes)
-                coordenadas_pixeles_huerfanos = detect_orphan_pixels(imagen_recortada, coordenadas_bordes, coordenadas_pixeles_principales)
 
-                # Extraer valores de píxeles principales (sin modificar la imagen)
-                pixeles_principales = []
-                pixeles_principales_coords = []
-                for x, y in coordenadas_pixeles_principales:
-                    if (0 <= y < imagen_recortada.shape[0] and 
-                        0 <= x < imagen_recortada.shape[1]):
-                        pixeles_principales.append(imagen_recortada[y, x])
-                        pixeles_principales_coords.append((x, y))
+                # Obtener los píxeles interiores del municipio en un solo paso
+                # (inundando desde el exterior; no hace falta semilla ni centroide)
+                coordenadas_pixeles = get_pixeles(imagen_recortada, coordenadas_bordes)
 
-                # Extraer valores de píxeles huérfanos (sin modificar la imagen)
-                pixeles_huerfanos = []
-                pixeles_huerfanos_coords = []
-                for x, y in coordenadas_pixeles_huerfanos:
-                    if (0 <= y < imagen_recortada.shape[0] and 
-                        0 <= x < imagen_recortada.shape[1]):
-                        pixeles_huerfanos.append(imagen_recortada[y, x])
-                        pixeles_huerfanos_coords.append((x, y))
-
-                # Combinar todos los píxeles para estadísticas generales
-                pixeles_imagen = pixeles_principales + pixeles_huerfanos
+                # Extraer valores de los píxeles (sin modificar la imagen)
+                pixeles_imagen = [imagen_recortada[y, x] for x, y in coordenadas_pixeles]
 
                 if show_plots:
                     ax[2][0].imshow(copia_imagen)
@@ -200,21 +179,15 @@ class SatelliteProcessor:
                             ax[2][0].plot(bordes_completos_x + [bordes_completos_x[0]], 
                                          bordes_completos_y + [bordes_completos_y[0]], 
                                          'k-', linewidth=2, alpha=0.9, label='Bordes')
-                    # Dibujar píxeles principales como puntos
-                    if pixeles_principales_coords:
-                        px_coords = list(zip(*pixeles_principales_coords))
-                        ax[2][0].scatter(px_coords[0], px_coords[1], c='blue', s=0.5, alpha=0.3, label='Píxeles principales')
-                    # Dibujar píxeles huérfanos como puntos
-                    if pixeles_huerfanos_coords:
-                        hx_coords = list(zip(*pixeles_huerfanos_coords))
-                        ax[2][0].scatter(hx_coords[0], hx_coords[1], c='red', s=0.5, alpha=0.3, label='Píxeles huérfanos')
+                    # Dibujar los píxeles del municipio como puntos
+                    if coordenadas_pixeles:
+                        px_coords = list(zip(*coordenadas_pixeles))
+                        ax[2][0].scatter(px_coords[0], px_coords[1], c='blue', s=0.5, alpha=0.3, label='Píxeles del municipio')
                     ax[2][0].set_title("Imagen con pixeles seleccionados")
                     ax[2][0].legend(loc='upper right', fontsize=8)
 
                     if pixeles_imagen:  # Solo mostrar histograma si hay píxeles
-                        ax[2][1].hist(pixeles_principales, bins=50, alpha=0.7, label='Main pixels', color='blue')
-                        if pixeles_huerfanos:
-                            ax[2][1].hist(pixeles_huerfanos, bins=50, alpha=0.7, label='Orphan pixels', color='red')
+                        ax[2][1].hist(pixeles_imagen, bins=50, alpha=0.7, label='Píxeles del municipio', color='blue')
                         ax[2][1].grid(True)
                         ax[2][1].set_title("Histograma de radiación")
                         ax[2][1].legend()
@@ -232,7 +205,6 @@ class SatelliteProcessor:
                 medicion = MedicionResultado(
                     Fecha=date_obj,
                     Cantidad_de_pixeles=len(pixeles_imagen),
-                    Cantidad_de_pixeles_principales=len(pixeles_principales),
                     Suma_de_radianza=float(np.sum(pixeles_imagen)),
                     Media_de_radianza=float(np.mean(pixeles_imagen)),
                     Desviacion_estandar_de_radianza=float(np.std(pixeles_imagen)),

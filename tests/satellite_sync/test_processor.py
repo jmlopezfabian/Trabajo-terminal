@@ -21,12 +21,8 @@ def _fake_completar_bordes(nx, ny):
     return [(0, 0), (1, 0), (2, 1), (1, 1), (0, 0)]
 
 
-def _fake_get_pixeles(imagen, centroide, bordes):
+def _fake_get_pixeles(imagen, bordes):
     return [(1, 1), (2, 1), (1, 2)]
-
-
-def _fake_detect_orphan(imagen, bordes, main_pixels):
-    return []
 
 
 class TestSatelliteProcessor:
@@ -38,9 +34,8 @@ class TestSatelliteProcessor:
                     with patch("satellite_sync.processor.recortar_imagen", side_effect=_fake_recortar):
                         with patch("satellite_sync.processor.completar_bordes", side_effect=_fake_completar_bordes):
                             with patch("satellite_sync.processor.get_pixeles", side_effect=_fake_get_pixeles):
-                                with patch("satellite_sync.processor.detect_orphan_pixels", side_effect=_fake_detect_orphan):
-                                    proc = SatelliteProcessor("Iztapalapa")
-                                    result = proc.get_measures("01-01-24", "h08v07", show_plots=False)
+                                proc = SatelliteProcessor("Iztapalapa")
+                                result = proc.get_measures("01-01-24", "h08v07", show_plots=False)
         assert result is not None
         assert isinstance(result, dict)
         assert "Fecha" in result
@@ -77,10 +72,9 @@ class TestSatelliteProcessor:
                     with patch("satellite_sync.processor.recortar_imagen", side_effect=_fake_recortar):
                         with patch("satellite_sync.processor.completar_bordes", side_effect=_fake_completar_bordes):
                             with patch("satellite_sync.processor.get_pixeles", side_effect=_fake_get_pixeles):
-                                with patch("satellite_sync.processor.detect_orphan_pixels", side_effect=_fake_detect_orphan):
-                                    with patch("satellite_sync.processor.os.remove"):
-                                        proc = SatelliteProcessor("Iztapalapa")
-                                        df = proc.run(["01-01-24", "02-01-24"], "h08v07", show_plots=False)
+                                with patch("satellite_sync.processor.os.remove"):
+                                    proc = SatelliteProcessor("Iztapalapa")
+                                    df = proc.run(["01-01-24", "02-01-24"], "h08v07", show_plots=False)
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 2
         assert "Fecha" in df.columns
