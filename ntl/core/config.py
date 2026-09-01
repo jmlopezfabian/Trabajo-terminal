@@ -6,6 +6,22 @@ from pathlib import Path
 
 load_dotenv()
 
+
+def _primera_definida(*nombres: str) -> str | None:
+    """
+    Primer valor no vacío de una lista de variables de entorno.
+
+    Las variables llevaban el prefijo VNP46A1_, que era el nombre anterior del
+    paquete. Se leen los dos nombres para no romper un despliegue que ya tenga
+    el antiguo configurado; el nuevo tiene precedencia.
+    """
+    for nombre in nombres:
+        valor = os.getenv(nombre)
+        if valor:
+            return valor
+    return None
+
+
 BASE_URL = "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/VNP46A1/{year}/{day}/"
 IMAGE_PATH = "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m"
 
@@ -15,11 +31,13 @@ IMAGE_PATH = "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m"
 # whatever the current working directory happened to be — so the same code
 # wrote to a different place depending on how the process was started, and in a
 # container could fill the root filesystem instead of the intended volume.
-# It is now an absolute path: set VNP46A1_TEMP_DIR to control it, otherwise it
+# It is now an absolute path: set NTL_TEMP_DIR to control it, otherwise it
 # falls back to a subdirectory of the system temp dir, which is always writable
 # and never depends on the cwd.
-_DEFAULT_TEMP_DIR = Path(tempfile.gettempdir()) / "vnp46a1"
-TEMP_DIR = Path(os.getenv("VNP46A1_TEMP_DIR") or _DEFAULT_TEMP_DIR).expanduser().resolve()
+_DEFAULT_TEMP_DIR = Path(tempfile.gettempdir()) / "ntl"
+TEMP_DIR = Path(
+    _primera_definida("NTL_TEMP_DIR", "VNP46A1_TEMP_DIR") or _DEFAULT_TEMP_DIR
+).expanduser().resolve()
 
 
 def temp_path(filename: str) -> Path:
@@ -34,8 +52,10 @@ def temp_path(filename: str) -> Path:
 # padre: lanzar el proceso desde una subcarpeta dejaba los resultados fuera del
 # proyecto. A diferencia de TEMP_DIR, el valor por omisión no es el temporal del
 # sistema: son resultados, no archivos de paso, y perderlos ahí sería peor.
-# Usa VNP46A1_DATA_DIR para fijarlo.
-DATA_DIR = Path(os.getenv("VNP46A1_DATA_DIR") or Path.cwd() / "data").expanduser().resolve()
+# Usa NTL_DATA_DIR para fijarlo.
+DATA_DIR = Path(
+    _primera_definida("NTL_DATA_DIR", "VNP46A1_DATA_DIR") or Path.cwd() / "data"
+).expanduser().resolve()
 
 
 def data_path(filename: str) -> Path:
@@ -81,13 +101,13 @@ def find_image_path(hdf_file) -> str:
         pass
 
     return IMAGE_PATH
-_DATA_ROOT = resources.files("vnp46a1_data")
+_DATA_ROOT = resources.files("ntl_data")
 
-# Polígonos municipales: entrada de vnp46a1.geometria, que los convierte en
+# Polígonos municipales: entrada de ntl.geometria, que los convierte en
 # coberturas por píxel.
 RUTA_MUNICIPIOS = str(_DATA_ROOT.joinpath("limite-de-las-alcaldias.json"))
 
-# Coberturas ya calculadas: entrada de vnp46a1.radianza, que las aplica a cada
+# Coberturas ya calculadas: entrada de ntl.radianza, que las aplica a cada
 # imagen diaria sin recalcular geometría.
 PIXELES_MUNICIPIOS = str(_DATA_ROOT.joinpath("municipios_coordenadas_pixeles.json"))
 

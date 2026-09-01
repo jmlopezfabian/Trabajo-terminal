@@ -10,9 +10,9 @@ import json
 import numpy as np
 import pytest
 
-from vnp46a1.core.config import PIXELES_MUNICIPIOS
-from vnp46a1.core.utils import extraer_coordenadas, load_coord_data, normalize_municipio
-from vnp46a1.geometria.image_processor import pesos_municipio, recortar
+from ntl.core.config import PIXELES_MUNICIPIOS
+from ntl.core.utils import extraer_coordenadas, load_coord_data, normalize_municipio
+from ntl.geometria.image_processor import pesos_municipio, recortar
 
 FORMA_CUADRANTE = (2400, 2400)
 

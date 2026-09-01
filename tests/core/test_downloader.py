@@ -1,9 +1,9 @@
-"""Tests for vnp46a1 downloader with mocked HTTP and I/O."""
+"""Tests for ntl downloader with mocked HTTP and I/O."""
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-from vnp46a1.core.downloader import find_file, download_file, is_valid_hdf5_file
+from ntl.core.downloader import find_file, download_file, is_valid_hdf5_file
 
 
 class TestFindFile:
@@ -11,7 +11,7 @@ class TestFindFile:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.text = sample_directory_html
-        with patch("vnp46a1.core.downloader.requests.get", return_value=mock_resp):
+        with patch("ntl.core.downloader.requests.get", return_value=mock_resp):
             url = find_file(2024, 1, "h08v07")
         assert url is not None
         assert "h08v07" in url
@@ -20,7 +20,7 @@ class TestFindFile:
     def test_returns_none_when_status_not_200(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
-        with patch("vnp46a1.core.downloader.requests.get", return_value=mock_resp):
+        with patch("ntl.core.downloader.requests.get", return_value=mock_resp):
             url = find_file(2024, 1, "h08v07")
         assert url is None
 
@@ -28,7 +28,7 @@ class TestFindFile:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.text = "<html><body><a href='other.h5'>x</a></body></html>"
-        with patch("vnp46a1.core.downloader.requests.get", return_value=mock_resp):
+        with patch("ntl.core.downloader.requests.get", return_value=mock_resp):
             url = find_file(2024, 1, "h99v99")
         assert url is None
 
@@ -36,7 +36,7 @@ class TestFindFile:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.text = sample_directory_html
-        with patch("vnp46a1.core.downloader.requests.get", return_value=mock_resp):
+        with patch("ntl.core.downloader.requests.get", return_value=mock_resp):
             url = find_file(2024, 1, "h08v07")
         assert url is not None
         assert "2024" in url or "1" in url or "h08v07" in url
@@ -48,8 +48,8 @@ class TestDownloadFile:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.iter_content = lambda chunk_size: [b"\x89HDF\r\n\x1a\n" + b"\x00" * 100]
-        with patch("vnp46a1.core.downloader.requests.get", return_value=mock_resp):
-            with patch("vnp46a1.core.downloader.is_valid_hdf5_file", return_value=True):
+        with patch("ntl.core.downloader.requests.get", return_value=mock_resp):
+            with patch("ntl.core.downloader.is_valid_hdf5_file", return_value=True):
                 result = download_file("http://example.com/file.h5", save_path)
         assert result == save_path
 
@@ -57,7 +57,7 @@ class TestDownloadFile:
         save_path = str(tmp_path / "out.h5")
         mock_resp = MagicMock()
         mock_resp.status_code = 404
-        with patch("vnp46a1.core.downloader.requests.get", return_value=mock_resp):
+        with patch("ntl.core.downloader.requests.get", return_value=mock_resp):
             result = download_file("http://example.com/file.h5", save_path)
         assert result is None
 
@@ -66,9 +66,9 @@ class TestDownloadFile:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.iter_content = lambda chunk_size: [b"not hdf5 content"]
-        with patch("vnp46a1.core.downloader.requests.get", return_value=mock_resp):
-            with patch("vnp46a1.core.downloader.is_valid_hdf5_file", return_value=False):
-                with patch("vnp46a1.core.downloader.os.remove"):
+        with patch("ntl.core.downloader.requests.get", return_value=mock_resp):
+            with patch("ntl.core.downloader.is_valid_hdf5_file", return_value=False):
+                with patch("ntl.core.downloader.os.remove"):
                     result = download_file("http://example.com/file.h5", save_path)
         assert result is None
 

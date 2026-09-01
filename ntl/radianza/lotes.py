@@ -17,7 +17,7 @@ def chunk_list(lst, chunk_size):
 def cleanup_temp_files():
     """Limpia archivos .h5 residuales en el directorio temp.
 
-    Usa la ruta absoluta TEMP_DIR (configurable con VNP46A1_TEMP_DIR); antes
+    Usa la ruta absoluta TEMP_DIR (configurable con NTL_TEMP_DIR); antes
     era "../temp" relativo al cwd, asi que podia limpiar un directorio
     distinto del que se habia usado para descargar.
     """

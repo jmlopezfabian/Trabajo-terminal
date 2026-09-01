@@ -1,4 +1,4 @@
-"""Unit tests for vnp46a1 utils (pure functions and I/O with mocks)."""
+"""Unit tests for ntl utils (pure functions and I/O with mocks)."""
 import json
 from pathlib import Path
 from unittest.mock import patch, mock_open, MagicMock
@@ -6,7 +6,7 @@ from unittest.mock import patch, mock_open, MagicMock
 import numpy as np
 import pytest
 
-from vnp46a1.core.utils import (
+from ntl.core.utils import (
     normalize_municipio,
     parse_date,
     distancia_puntos,
@@ -91,19 +91,19 @@ class TestPolygonCentroid:
 
 class TestExtraerCoordenadas:
     def test_returns_coordinates_when_found(self, municipios_json_path):
-        with patch("vnp46a1.core.utils.RUTA_MUNICIPIOS", municipios_json_path):
+        with patch("ntl.core.utils.RUTA_MUNICIPIOS", municipios_json_path):
             coords = extraer_coordenadas("Iztapalapa")
         assert coords is not None
         assert isinstance(coords, np.ndarray)
         assert len(coords) > 0
 
     def test_returns_none_when_not_found(self, municipios_json_path):
-        with patch("vnp46a1.core.utils.RUTA_MUNICIPIOS", municipios_json_path):
+        with patch("ntl.core.utils.RUTA_MUNICIPIOS", municipios_json_path):
             coords = extraer_coordenadas("MunicipioInexistente")
         assert coords is None
 
     def test_returns_none_on_invalid_json(self):
-        with patch("vnp46a1.core.utils.RUTA_MUNICIPIOS", "/nonexistent/path.json"):
+        with patch("ntl.core.utils.RUTA_MUNICIPIOS", "/nonexistent/path.json"):
             with patch("builtins.open", mock_open(read_data="invalid {")):
                 coords = extraer_coordenadas("Iztapalapa")
         assert coords is None

@@ -4,11 +4,11 @@ import os
 from datetime import date, datetime
 from typing import Literal
 
-from vnp46a1.core.config import PIXELES_MUNICIPIOS, temp_path
-from vnp46a1.core.downloader import download_file_async, find_file_async
-from vnp46a1.radianza.extraccion import extract_radiance_matrix
-from vnp46a1.radianza.lotes import SatelliteImagesAsync
-from vnp46a1.core.utils import load_coord_data, normalize_municipio, parse_date
+from ntl.core.config import PIXELES_MUNICIPIOS, temp_path
+from ntl.core.downloader import download_file_async, find_file_async
+from ntl.radianza.extraccion import extract_radiance_matrix
+from ntl.radianza.lotes import SatelliteImagesAsync
+from ntl.core.utils import load_coord_data, normalize_municipio, parse_date
 
 
 class JobState:

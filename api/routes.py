@@ -6,9 +6,9 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, HTTPException
 
-from vnp46a1.core.config import PIXELES_MUNICIPIOS
-from vnp46a1.core.models import MedicionResultado
-from vnp46a1.core.utils import normalize_municipio
+from ntl.core.config import PIXELES_MUNICIPIOS
+from ntl.core.models import MedicionResultado
+from ntl.core.utils import normalize_municipio
 
 from .agent import get_agent, get_last_tool_results
 from .job_manager import job_store, run_job, run_matriz_job

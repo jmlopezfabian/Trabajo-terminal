@@ -1,7 +1,7 @@
 """
 Regenera la tabla de cobertura por municipio.
 
-Este archivo (``vnp46a1_data/municipios_coordenadas_pixeles.json``) precalcula,
+Este archivo (``ntl_data/municipios_coordenadas_pixeles.json``) precalcula,
 una sola vez por municipio, qué fracción de cada píxel de la retícula VNP46A1
 cae dentro de su límite geográfico. El pipeline de radianza lo lee en cada
 ejecución diaria para saltarse por completo la etapa de transformación
@@ -29,16 +29,16 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vnp46a1.core.config import RUTA_MUNICIPIOS
-from vnp46a1.geometria.image_processor import pesos_municipio, recortar
-from vnp46a1.core.utils import extraer_coordenadas, normalize_municipio
+from ntl.core.config import RUTA_MUNICIPIOS
+from ntl.geometria.image_processor import pesos_municipio, recortar
+from ntl.core.utils import extraer_coordenadas, normalize_municipio
 
 # Retícula del producto VNP46A1 a 500 m: 2400x2400 píxeles por cuadrante de 10°x10°
 FORMA_CUADRANTE = (2400, 2400)
 
 SALIDA_POR_DEFECTO = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "vnp46a1_data",
+    "ntl_data",
     "municipios_coordenadas_pixeles.json",
 )
 

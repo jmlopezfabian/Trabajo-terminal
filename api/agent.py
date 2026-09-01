@@ -11,8 +11,8 @@ from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
-from vnp46a1.core.config import PIXELES_MUNICIPIOS
-from vnp46a1.core.utils import normalize_municipio
+from ntl.core.config import PIXELES_MUNICIPIOS
+from ntl.core.utils import normalize_municipio
 
 from .job_manager import job_store, run_job, run_matriz_job
 

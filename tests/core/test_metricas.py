@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from vnp46a1.core.metricas import metricas_ponderadas
+from ntl.core.metricas import metricas_ponderadas
 
 
 class TestMetricasPonderadas:
@@ -53,7 +53,7 @@ class TestMetricasPonderadas:
         assert metricas_ponderadas(np.array([1.0, 2.0]), np.array([0.0, 0.0])) is None
 
     def test_devuelve_los_campos_de_medicion_resultado(self):
-        from vnp46a1.core.models import MedicionResultado
+        from ntl.core.models import MedicionResultado
         from datetime import date
 
         m = metricas_ponderadas(np.array([1.0, 2.0]), np.array([1.0, 0.5]))

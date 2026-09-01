@@ -2,7 +2,7 @@
 Polígono municipal → cobertura por píxel.
 
 Etapa que corre una vez por municipio: su resultado es estático mientras no
-cambie la delimitación oficial. Produce la tabla que consume `vnp46a1.radianza`.
+cambie la delimitación oficial. Produce la tabla que consume `ntl.radianza`.
 """
 
 from .image_processor import (

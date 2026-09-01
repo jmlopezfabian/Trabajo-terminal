@@ -1,9 +1,9 @@
-"""Tests for vnp46a1 downloader with mocked HTTP."""
+"""Tests for ntl downloader with mocked HTTP."""
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from vnp46a1.core.downloader import find_file_async, download_file_async
+from ntl.core.downloader import find_file_async, download_file_async
 
 
 def _make_resp(status=200, text="", content_bytes=None):

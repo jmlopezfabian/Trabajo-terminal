@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vnp46a1"
+name = "ntl"
 version = "0.2.0"
 description = "VNP46A1 satellite nighttime radiance processing"
 requires-python = ">=3.11"
@@ -17,7 +17,7 @@ dependencies = [
     "python-dotenv>=1.0",
     # requests: descarga bloqueante en core.downloader
     "requests>=2.26",
-    # scipy y matplotlib: los usa vnp46a1.geometria, que hasta ahora no se
+    # scipy y matplotlib: los usa ntl.geometria, que hasta ahora no se
     # distribuía y por eso nunca declaró sus dependencias.
     "scipy>=1.7",
     "matplotlib>=3.4",
@@ -25,12 +25,12 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-# vnp46a1_data ships the municipality coordinate tables that vnp46a1.core.config
+# ntl_data ships the municipality coordinate tables that ntl.core.config
 # points at (RUTA_MUNICIPIOS, PIXELES_MUNICIPIOS). Without it here, an installed
 # copy of this package imports fine and then fails at runtime.
 # The glob covers every subpackage; listing them one by one is how the geometry
 # half silently stopped being installed.
-include = ["vnp46a1*", "vnp46a1_data*"]
+include = ["ntl*", "ntl_data*"]
 
 [tool.setuptools.package-data]
-vnp46a1_data = ["*.json"]
+ntl_data = ["*.json"]
