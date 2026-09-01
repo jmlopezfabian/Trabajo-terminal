@@ -24,44 +24,35 @@ def _primera_definida(*nombres: str) -> str | None:
 
 # Producto de Black Marble del que se lee la radianza.
 #
-#   VNP46A1  radianza cruda al sensor. Sin corregir por luna, nubes ni
-#            atmósfera, y sin ninguna bandera de calidad aplicada: una noche
-#            completamente nublada produce un número plausible que no es luz
-#            del suelo.
-#   VNP46A2  la misma escena corregida por BRDF lunar y atmósfera, con
-#            Mandatory_Quality_Flag para descartar lo que no es utilizable.
-#            Es el producto pensado para series temporales.
+# VNP46A2: la escena corregida por reflectancia bidireccional lunar y atmósfera,
+# con Mandatory_Quality_Flag por píxel.
 #
-# Se elige con NTL_PRODUCTO. El valor por omisión es VNP46A2 porque para medir
-# actividad económica interesa la luz del suelo, no lo que llegó al sensor.
-PRODUCTO = (_primera_definida("NTL_PRODUCTO") or "VNP46A2").upper()
+# No hay alternativa configurable. VNP46A1 entrega radianza cruda al sensor, sin
+# corregir y sin ninguna bandera que permita descartar una observación
+# inservible: una noche completamente nublada produce un valor plausible que no
+# es luz del suelo. Dejarlo disponible como opción invitaba a producir series
+# que parecen válidas y no lo son.
+PRODUCTO = "VNP46A2"
 
-_BASE_URL_PLANTILLA = (
-    "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/{producto}/{{year}}/{{day}}/"
+BASE_URL = (
+    "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/"
+    f"{PRODUCTO}/{{year}}/{{day}}/"
 )
-BASE_URL = _BASE_URL_PLANTILLA.format(producto=PRODUCTO)
 
-# Dataset de radianza de cada producto, en orden de preferencia. La colección
-# 5200 publica VNP46A1 bajo dos nombres de grid distintos según la versión.
-DATASETS_RADIANCIA = {
-    "VNP46A1": (
-        "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m",
-        "HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/DNB_At_Sensor_Radiance_500m",
-        "HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/DNB_At_Sensor_Radiance",
-    ),
-    "VNP46A2": (
-        "HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/DNB_BRDF-Corrected_NTL",
-        "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_BRDF-Corrected_NTL",
-    ),
-}
+# Rutas del dataset de radianza, en orden de preferencia: la colección publica
+# el grid bajo dos nombres según la versión.
+DATASETS_RADIANCIA = (
+    "HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/DNB_BRDF-Corrected_NTL",
+    "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_BRDF-Corrected_NTL",
+)
 
-# Bandera de calidad de VNP46A2. En la colección 2.0, 0 es alta calidad y de 1 a
-# 5 son distintas formas de mala: 3 eclipse lunar, 4 aurora, 5 destello. 255 es
+# Bandera de calidad. En la colección 2.0, 0 es alta calidad y de 1 a 5 son
+# distintas formas de mala: 3 eclipse lunar, 4 aurora, 5 destello. 255 es
 # ausencia de recuperación.
 BANDERA_CALIDAD = "Mandatory_Quality_Flag"
 CALIDAD_ACEPTABLE = 0
 
-IMAGE_PATH = DATASETS_RADIANCIA["VNP46A1"][0]
+IMAGE_PATH = DATASETS_RADIANCIA[0]
 
 # Where the downloaded HDF5 files (hundreds of MB each) are staged.
 #
@@ -107,12 +98,7 @@ def find_image_path(hdf_file) -> str:
     Encuentra la ruta al dataset de radianza. Colección 5200 puede usar
     VIIRS_Grid_DNB_2d o VNP_Grid_DNB; busca alternativas si el path estándar falla.
     """
-    # Se prueban primero los del producto configurado y luego los del otro, para
-    # que un archivo suelto siga abriéndose aunque no coincida con la variable.
-    candidates = list(DATASETS_RADIANCIA.get(PRODUCTO, ()))
-    for producto, rutas in DATASETS_RADIANCIA.items():
-        if producto != PRODUCTO:
-            candidates.extend(rutas)
+    candidates = list(DATASETS_RADIANCIA)
     for path in candidates:
         try:
             if path in hdf_file:

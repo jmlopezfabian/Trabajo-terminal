@@ -1,5 +1,5 @@
 """
-Procesamiento de imágenes satelitales VNP46A1.
+Procesamiento de imágenes satelitales VNP46A2 (Black Marble).
 
 El paquete está dividido por responsabilidad, no por modelo de concurrencia:
 

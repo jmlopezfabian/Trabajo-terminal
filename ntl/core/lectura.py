@@ -8,12 +8,16 @@ El dataset viene como enteros sin signo con tres atributos que hay que respetar:
 Ignorar el relleno no es un detalle: en el histórico hay cuatro fechas en las que
 el cuadrante completo venía relleno, y como 65535 se sumó como si fuera radianza,
 esos registros salieron con sumas 229 veces mayores que las normales.
+
+A eso se suma `Mandatory_Quality_Flag`, que VNP46A2 publica por píxel y que aquí
+es obligatoria: un archivo que no la traiga se rechaza en vez de procesarse sin
+filtrar.
 """
 from typing import Tuple
 
 import numpy as np
 
-from .config import BANDERA_CALIDAD, CALIDAD_ACEPTABLE, find_image_path
+from .config import BANDERA_CALIDAD, CALIDAD_ACEPTABLE, PRODUCTO, find_image_path
 
 
 def _buscar_hermano(hdf_file, dataset, nombre):
@@ -62,13 +66,21 @@ def leer_radianza(hdf_file) -> Tuple[np.ndarray, dict]:
     if maximo is not None:
         valido &= crudo <= maximo
 
-    # VNP46A2 marca por píxel si la recuperación sirve. Sin esto, una noche
-    # nublada entrega un número plausible que no es luz del suelo: en el
-    # 2025-01-05 de Iztapalapa, VNP46A1 dio 62,838 y VNP46A2 dice que no hay
-    # ni un píxel utilizable.
+    # VNP46A2 marca por píxel si la recuperación sirve, y sin eso una noche
+    # nublada entrega un número plausible que no es luz del suelo: el 5 de enero
+    # de 2025, Iztapalapa estaba 100% nublado y VNP46A1 daba 62,838.
+    #
+    # Se exige la bandera en vez de seguir sin ella. Procesar un archivo sin
+    # filtrar produciría una serie que parece válida y no lo es, que es
+    # justamente lo que este proyecto dejó de aceptar.
     calidad = _buscar_hermano(hdf_file, dataset, BANDERA_CALIDAD)
-    if calidad is not None:
-        valido &= calidad[()] == CALIDAD_ACEPTABLE
+    if calidad is None:
+        raise ValueError(
+            f"El archivo no trae {BANDERA_CALIDAD}: no parece un producto "
+            f"{PRODUCTO}. Sin la bandera de calidad no hay forma de distinguir "
+            f"una noche despejada de una completamente nublada."
+        )
+    valido &= calidad[()] == CALIDAD_ACEPTABLE
 
     radianza = np.full(crudo.shape, np.nan, dtype=np.float64)
     radianza[valido] = crudo[valido].astype(np.float64) * escala + desplazamiento
@@ -78,8 +90,7 @@ def leer_radianza(hdf_file) -> Tuple[np.ndarray, dict]:
         unidades = unidades.decode(errors="replace")
 
     return radianza, {
-        "producto": "VNP46A2" if calidad is not None else "VNP46A1",
-        "calidad_aplicada": calidad is not None,
+        "producto": PRODUCTO,
         "escala": escala,
         "desplazamiento": desplazamiento,
         "unidades": unidades,
