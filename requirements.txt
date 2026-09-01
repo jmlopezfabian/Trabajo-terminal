@@ -1,4 +1,4 @@
-# Requisitos principales para procesamiento de imágenes satelitales VNP46A1
+# Requisitos principales para procesamiento de imágenes satelitales VNP46A2
 # Python >= 3.8
 
 # Procesamiento de datos
