@@ -8,21 +8,14 @@ import pytest
 from ntl.geometria.processor import SatelliteProcessor
 
 
-def _fake_recortar(image_matrix, coords, upper_left, factor_escala):
-    """Return small image and border coords that avoid division by zero in completar_bordes."""
-    small = np.ones((5, 5), dtype=np.float32) * 10.0
-    # Border coords with no vertical segment (all x different)
-    nx = np.array([0.5, 1.5, 2.0, 1.0])
-    ny = np.array([0.5, 0.5, 1.5, 1.5])
-    return small, nx, ny
-
-
-def _fake_completar_bordes(nx, ny):
-    return [(0, 0), (1, 0), (2, 1), (1, 1), (0, 0)]
-
-
-def _fake_get_pixeles(imagen, bordes):
-    return [(1, 1), (2, 1), (1, 2)]
+def _fake_cobertura(poligono):
+    """Cobertura de un recorte pequeño: interior lleno y un borde a medias."""
+    pesos = np.array([
+        [0.0, 0.5, 0.5, 0.0],
+        [0.5, 1.0, 1.0, 0.5],
+        [0.0, 0.5, 0.5, 0.0],
+    ])
+    return pesos, 2, 3      # matriz, fila y columna de origen dentro del cuadrante
 
 
 class TestSatelliteProcessor:
@@ -31,11 +24,9 @@ class TestSatelliteProcessor:
         with patch("ntl.geometria.processor.find_file", return_value="http://example.com/file.h5"):
             with patch("ntl.geometria.processor.download_file", return_value=sample_hdf5_path):
                 with patch("ntl.geometria.processor.extraer_coordenadas", return_value=coords):
-                    with patch("ntl.geometria.processor.recortar_imagen", side_effect=_fake_recortar):
-                        with patch("ntl.geometria.processor.completar_bordes", side_effect=_fake_completar_bordes):
-                            with patch("ntl.geometria.processor.get_pixeles", side_effect=_fake_get_pixeles):
-                                proc = SatelliteProcessor("Iztapalapa")
-                                result = proc.get_measures("01-01-24", "h08v07", show_plots=False)
+                    with patch("ntl.geometria.processor.cobertura_exacta", side_effect=_fake_cobertura):
+                        proc = SatelliteProcessor("Iztapalapa")
+                        result = proc.get_measures("01-01-24", "h08v07", show_plots=False)
         assert result is not None
         assert isinstance(result, dict)
         assert "Fecha" in result
@@ -69,12 +60,10 @@ class TestSatelliteProcessor:
         with patch("ntl.geometria.processor.find_file", return_value="http://example.com/file.h5"):
             with patch("ntl.geometria.processor.download_file", return_value=sample_hdf5_path):
                 with patch("ntl.geometria.processor.extraer_coordenadas", return_value=coords):
-                    with patch("ntl.geometria.processor.recortar_imagen", side_effect=_fake_recortar):
-                        with patch("ntl.geometria.processor.completar_bordes", side_effect=_fake_completar_bordes):
-                            with patch("ntl.geometria.processor.get_pixeles", side_effect=_fake_get_pixeles):
-                                with patch("ntl.geometria.processor.os.remove"):
-                                    proc = SatelliteProcessor("Iztapalapa")
-                                    df = proc.run(["01-01-24", "02-01-24"], "h08v07", show_plots=False)
+                    with patch("ntl.geometria.processor.cobertura_exacta", side_effect=_fake_cobertura):
+                        with patch("ntl.geometria.processor.os.remove"):
+                            proc = SatelliteProcessor("Iztapalapa")
+                            df = proc.run(["01-01-24", "02-01-24"], "h08v07", show_plots=False)
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 2
         assert "Fecha" in df.columns

@@ -341,3 +341,38 @@ class TestParticionDeFronteras:
             f"exceso medio {exceso / len(compartidos):.4f} px sobre "
             f"{len(compartidos)} píxeles compartidos"
         )
+
+
+class TestUnCaminoUnico:
+    """
+    Los dos caminos del proyecto deben calcular la cobertura igual.
+
+    `SatelliteProcessor` explora una fecha suelta y el precomputo alimenta el
+    procesamiento por lotes. Durante un tiempo el primero aproximó la cobertura
+    por subdivisión mientras el segundo la calculaba exacta, que es la clase de
+    divergencia que produce dos respuestas para la misma pregunta.
+    """
+
+    @pytest.mark.parametrize("nombre", ["Azcapotzalco", "Iztacalco"])
+    def test_el_procesador_usa_la_misma_cobertura_que_la_tabla(self, nombre):
+        import ntl.geometria.processor as procesador
+
+        assert procesador.cobertura_exacta is cobertura_exacta
+
+        datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
+        coordenadas = extraer_coordenadas(nombre)
+        poligono = poligono_en_pixeles(
+            coordenadas, esquina_superior_izquierda(datos.cuadrante), FORMA_CUADRANTE
+        )
+        pesos, _, _ = cobertura_exacta(poligono)
+        assert float(pesos.sum()) == pytest.approx(datos.area, rel=1e-6)
+
+    def test_el_procesador_no_expone_un_factor_de_escala(self):
+        """Con la cobertura exacta no hay factor que elegir."""
+        import inspect
+
+        from ntl.geometria.processor import SatelliteProcessor
+
+        for metodo in (SatelliteProcessor.__init__, SatelliteProcessor.get_measures,
+                       SatelliteProcessor.run, SatelliteProcessor.recortar_imagen_solo):
+            assert "factor_escala" not in inspect.signature(metodo).parameters, metodo.__name__
