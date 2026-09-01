@@ -8,10 +8,10 @@ matplotlib.use('Agg')  # Configurar backend no interactivo
 import matplotlib.pyplot as plt
 import os
 from typing import Optional, Tuple, List
-from .config import IMAGE_PATH, find_image_path
-from .models import MedicionResultado
-from .utils import parse_date, extraer_coordenadas, left_right_coords
-from .downloader import find_file, download_file
+from ..core.config import IMAGE_PATH, find_image_path, temp_path
+from ..core.models import MedicionResultado
+from ..core.utils import parse_date, extraer_coordenadas, left_right_coords
+from ..core.downloader import find_file, download_file
 from .image_processor import (
     recortar,
     recortar_imagen,
@@ -45,8 +45,7 @@ class SatelliteProcessor:
         """
         try:
             # Crear directorio temp si no existe
-            os.makedirs("../temp", exist_ok=True)
-            filename = f"../temp/{date_obj}_{self.municipio}_{quadrant}_{plot_type}.png"
+            filename = str(temp_path(f"{date_obj}_{self.municipio}_{quadrant}_{plot_type}.png"))
             fig.savefig(filename, dpi=300, bbox_inches='tight')
             print(f"Gráfica guardada como: {filename}")
         except Exception as e:
@@ -78,7 +77,7 @@ class SatelliteProcessor:
             print("No se encontró el archivo.")
             return None
 
-        save_path = f"../temp/{date_obj}_{self.municipio}_{quadrant}.h5"
+        save_path = str(temp_path(f"{date_obj}_{self.municipio}_{quadrant}.h5"))
         h5_save_path = download_file(h5_url, save_path)
         if not h5_save_path:
             print("Fallo la descarga del archivo.")
@@ -290,7 +289,7 @@ class SatelliteProcessor:
             print("No se encontró el archivo.")
             return None
 
-        save_path = f"../temp/{date_obj}_{self.municipio}_{quadrant}.h5"
+        save_path = str(temp_path(f"{date_obj}_{self.municipio}_{quadrant}.h5"))
         h5_save_path = download_file(h5_url, save_path)
         if not h5_save_path:
             print("Fallo la descarga del archivo.")

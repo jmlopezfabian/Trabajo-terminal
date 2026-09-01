@@ -1,9 +1,9 @@
-"""Unit tests for satellite_sync Pydantic models."""
+"""Unit tests for vnp46a1 Pydantic models."""
 import pytest
 from datetime import date
 from pydantic import ValidationError
 
-from satellite_sync.models import CoordenadasPixeles, MedicionResultado
+from vnp46a1.core.models import CoordenadasPixeles, MedicionResultado
 
 
 class TestCoordenadasPixeles:

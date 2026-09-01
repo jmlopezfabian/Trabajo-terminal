@@ -5,8 +5,8 @@ import os
 from datetime import date
 from typing import Any
 
-from .config import IMAGE_PATH, find_image_path
-from .models import MedicionResultado
+from ..core.config import IMAGE_PATH, find_image_path
+from ..core.models import MedicionResultado
 
 
 def _float_to_json_safe(value: float) -> float | None:

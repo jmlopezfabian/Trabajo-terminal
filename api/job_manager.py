@@ -4,11 +4,11 @@ import os
 from datetime import date, datetime
 from typing import Literal
 
-from satellite_async.config import PIXELES_MUNICIPIOS
-from satellite_async.downloader import download_file, find_file
-from satellite_async.processing import extract_radiance_matrix
-from satellite_async.satellite_async import SatelliteImagesAsync
-from satellite_async.utils import load_coord_data, normalize_municipio, parse_date
+from vnp46a1.core.config import PIXELES_MUNICIPIOS
+from vnp46a1.core.downloader import download_file_async, find_file_async
+from vnp46a1.radianza.extraccion import extract_radiance_matrix
+from vnp46a1.radianza.lotes import SatelliteImagesAsync
+from vnp46a1.core.utils import load_coord_data, normalize_municipio, parse_date
 
 
 class JobState:
@@ -113,7 +113,7 @@ async def run_matriz_job(job_id: str, municipio: str, fecha: date) -> None:
         import aiohttp
 
         async with aiohttp.ClientSession() as session:
-            h5_url = await find_file(session, year, day, cuadrante)
+            h5_url = await find_file_async(session, year, day, cuadrante)
             if not h5_url:
                 state.status = "failed"
                 state.error = f"No se encontró archivo HDF5 para {year}-{day} ({cuadrante})"
@@ -121,7 +121,7 @@ async def run_matriz_job(job_id: str, municipio: str, fecha: date) -> None:
 
             os.makedirs("../temp", exist_ok=True)
             save_path = f"../temp/{date_obj}_{cuadrante}_matriz.h5"
-            downloaded_path = await download_file(session, h5_url, save_path)
+            downloaded_path = await download_file_async(session, h5_url, save_path)
             if not downloaded_path:
                 state.status = "failed"
                 state.error = f"Error descargando archivo HDF5"

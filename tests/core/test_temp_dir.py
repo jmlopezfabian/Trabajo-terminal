@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from satellite_async import config
+from vnp46a1.core import config
 
 
 def _reload_config(monkeypatch, temp_dir=None):
@@ -71,7 +71,7 @@ def test_download_and_cleanup_agree_on_the_directory(monkeypatch, tmp_path):
     target = tmp_path / "staging"
     _reload_config(monkeypatch, target)
 
-    from satellite_async import satellite_async as sa
+    from vnp46a1.radianza import lotes as sa
 
     importlib.reload(sa)
 
@@ -91,9 +91,15 @@ def test_no_relative_temp_paths_remain():
     Matches assignments such as `temp_dir = "../temp"`, not prose mentioning
     the old path in a comment or docstring.
     """
-    import satellite_async
+    import vnp46a1
 
-    source_dir = Path(satellite_async.__file__).parent
+    # rglob, no glob: la mitad de geometría vivía en otro paquete y por eso
+    # conservó el "../temp" durante todo el tiempo que este test estuvo en verde.
+    source_dir = Path(vnp46a1.__file__).parent
     pattern = re.compile(r"""=\s*f?["'][^"']*\.\./temp""")
-    offenders = [path.name for path in source_dir.glob("*.py") if pattern.search(path.read_text())]
+    offenders = [
+        str(path.relative_to(source_dir))
+        for path in source_dir.rglob("*.py")
+        if pattern.search(path.read_text())
+    ]
     assert offenders == []

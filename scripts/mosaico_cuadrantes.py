@@ -21,9 +21,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import aiohttp
 import h5py
 
-from satellite_async.config import find_image_path
-from satellite_async.downloader import download_file, find_file
-from satellite_async.utils import parse_date
+from vnp46a1.core.config import find_image_path
+from vnp46a1.core.downloader import download_file_async, find_file_async
+from vnp46a1.core.utils import parse_date
 
 # Columnas H06..H09 (de izquierda a derecha) x filas V06..V07 (de arriba a abajo,
 # ya que v crece hacia el sur en la cuadrícula sinusoidal de VIIRS/MODIS).
@@ -65,11 +65,11 @@ async def descargar_cuadrante(
 
     for intento in range(1, intentos + 1):
         try:
-            url = await find_file(session, year, day, cuadrante)
+            url = await find_file_async(session, year, day, cuadrante)
             if not url:
                 print(f"  [{cuadrante}] no se encontró archivo para {year}-{day}")
                 return None
-            downloaded = await download_file(session, url, save_path)
+            downloaded = await download_file_async(session, url, save_path)
             if downloaded and es_hdf5_valido(downloaded):
                 return downloaded
             print(f"  [{cuadrante}] descarga inválida o incompleta (intento {intento}/{intentos})")

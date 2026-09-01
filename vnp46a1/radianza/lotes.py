@@ -4,11 +4,11 @@ import os
 import glob
 from typing import Callable
 
-from .config import PIXELES_MUNICIPIOS, TEMP_DIR, temp_path
-from .utils import normalize_municipio, parse_date, load_coord_data
-from .downloader import find_file, download_file
-from .processing import process_image
-from .models import MedicionResultado
+from ..core.config import PIXELES_MUNICIPIOS, TEMP_DIR, temp_path
+from ..core.utils import normalize_municipio, parse_date, load_coord_data
+from ..core.downloader import find_file_async, download_file_async
+from .extraccion import process_image
+from ..core.models import MedicionResultado
 
 def chunk_list(lst, chunk_size):
     """Divide una lista en chunks del tamaño especificado"""
@@ -123,14 +123,14 @@ class SatelliteImagesAsync:
         
         # Buscar y descargar el archivo
         print(f"🔍 Buscando archivo H5 para: {year}-{day} ({cuadrante})")
-        h5_url = await find_file(session, year, day, cuadrante)
+        h5_url = await find_file_async(session, year, day, cuadrante)
         if not h5_url:
             print(f"❌ No se encontró archivo H5 para: {year}-{day} ({cuadrante})")
             return None
             
         save_path = str(temp_path(f"{date_obj}_{cuadrante}.h5"))
         print(f"📥 Descargando: {h5_url} -> {save_path}")
-        downloaded_path = await download_file(session, h5_url, save_path)
+        downloaded_path = await download_file_async(session, h5_url, save_path)
         
         if downloaded_path:
             self.cache_h5_files[cache_key] = downloaded_path
