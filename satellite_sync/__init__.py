@@ -30,9 +30,12 @@ from .utils import (
 )
 from .downloader import find_file, download_file
 from .image_processor import (
+    recortar,
     recortar_imagen,
     completar_bordes,
     get_pixeles,
+    pesos_municipio,
+    metricas_ponderadas,
     aumentar_imagen
 )
 
@@ -50,8 +53,11 @@ __all__ = [
     "polygon_centroid",
     "find_file",
     "download_file",
+    "recortar",
     "recortar_imagen",
     "completar_bordes",
     "get_pixeles",
+    "pesos_municipio",
+    "metricas_ponderadas",
     "aumentar_imagen"
 ]
