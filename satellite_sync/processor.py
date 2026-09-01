@@ -12,7 +12,14 @@ from .config import IMAGE_PATH, find_image_path
 from .models import MedicionResultado
 from .utils import parse_date, extraer_coordenadas, left_right_coords
 from .downloader import find_file, download_file
-from .image_processor import recortar_imagen, completar_bordes, get_pixeles
+from .image_processor import (
+    recortar,
+    recortar_imagen,
+    completar_bordes,
+    get_pixeles,
+    pesos_municipio,
+    metricas_ponderadas,
+)
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -107,18 +114,23 @@ class SatelliteProcessor:
                 ax[0][0].imshow(copia_imagen)
                 ax[0][0].set_title(f"Imagen completa {self.municipio} - {date_obj}")
                 
-            # Recortar imagen
+            # Recortar imagen. El recorte se queda en resolución original: el
+            # factor de escala solo viaja en las coordenadas del borde.
             try:
-                imagen_recortada, nuevos_x, nuevos_y = recortar_imagen(
+                imagen_recortada, nuevos_x, nuevos_y = recortar(
                     image_matrix, coordenadas_municipio, left_coord, escala_a_usar
                 )
-                
+
                 # Validar que la imagen recortada no esté vacía
                 if imagen_recortada.size == 0:
                     print("La imagen recortada está vacía. Verifica las coordenadas del municipio.")
                     return None
-                    
+
                 copia_imagen = np.clip(imagen_recortada, 0, np.percentile(imagen_recortada, 99))
+
+                # Para graficar, las coordenadas vuelven a la malla original
+                grafica_x = nuevos_x / escala_a_usar
+                grafica_y = nuevos_y / escala_a_usar
 
                 if show_plots:
                     ax[0][1].imshow(imagen_recortada)
@@ -128,10 +140,10 @@ class SatelliteProcessor:
                 bordes_incompletos_x = []
                 bordes_incompletos_y = []
                 for i in range(len(nuevos_y)):
-                    if (0 <= int(nuevos_y[i]) < imagen_recortada.shape[0] and 
-                        0 <= int(nuevos_x[i]) < imagen_recortada.shape[1]):
-                        bordes_incompletos_x.append(int(nuevos_x[i]))
-                        bordes_incompletos_y.append(int(nuevos_y[i]))
+                    if (0 <= int(grafica_y[i]) < imagen_recortada.shape[0] and
+                        0 <= int(grafica_x[i]) < imagen_recortada.shape[1]):
+                        bordes_incompletos_x.append(int(grafica_x[i]))
+                        bordes_incompletos_y.append(int(grafica_y[i]))
 
                 if show_plots:
                     ax[1][0].imshow(copia_imagen)
@@ -140,17 +152,18 @@ class SatelliteProcessor:
                         ax[1][0].scatter(bordes_incompletos_x, bordes_incompletos_y, c='red', s=1, alpha=0.6)
                     ax[1][0].set_title("Imagen con bordes incompletos")
 
-                # Completar bordes
-                coordenadas_bordes = completar_bordes(nuevos_x, nuevos_y)
-
-                # Preparar coordenadas de bordes completos para visualización (sin modificar la imagen)
+                # Preparar coordenadas de bordes completos para visualización.
+                # Solo se trazan si hay que graficar: la medición no los necesita,
+                # pesos_municipio los calcula por su cuenta.
                 bordes_completos_x = []
                 bordes_completos_y = []
-                for coordenada in coordenadas_bordes:
-                    if (0 <= coordenada[1] < imagen_recortada.shape[0] and 
-                        0 <= coordenada[0] < imagen_recortada.shape[1]):
-                        bordes_completos_x.append(coordenada[0])
-                        bordes_completos_y.append(coordenada[1])
+                if show_plots:
+                    for coordenada in completar_bordes(nuevos_x, nuevos_y):
+                        bx, by = coordenada[0] / escala_a_usar, coordenada[1] / escala_a_usar
+                        if (0 <= by < imagen_recortada.shape[0] and
+                            0 <= bx < imagen_recortada.shape[1]):
+                            bordes_completos_x.append(bx)
+                            bordes_completos_y.append(by)
 
                 if show_plots:
                     ax[1][1].imshow(copia_imagen)
@@ -164,56 +177,51 @@ class SatelliteProcessor:
                     ax[1][1].set_title("Imagen con bordes completos")
 
 
-                # Obtener los píxeles interiores del municipio en un solo paso
-                # (inundando desde el exterior; no hace falta semilla ni centroide)
-                coordenadas_pixeles = get_pixeles(imagen_recortada, coordenadas_bordes)
-
-                # Extraer valores de los píxeles (sin modificar la imagen)
-                pixeles_imagen = [imagen_recortada[y, x] for x, y in coordenadas_pixeles]
+                # Aquí entra el producto Kronecker: la malla fina se construye
+                # solo para decidir qué fracción de cada píxel original cae
+                # dentro, y se colapsa de inmediato a una matriz de pesos del
+                # tamaño del recorte. La radianza nunca se replica.
+                pesos = pesos_municipio(
+                    imagen_recortada.shape, nuevos_x, nuevos_y, escala_a_usar
+                )
 
                 if show_plots:
                     ax[2][0].imshow(copia_imagen)
                     # Dibujar bordes
                     if bordes_completos_x:
                         if len(bordes_completos_x) > 1:
-                            ax[2][0].plot(bordes_completos_x + [bordes_completos_x[0]], 
-                                         bordes_completos_y + [bordes_completos_y[0]], 
+                            ax[2][0].plot(bordes_completos_x + [bordes_completos_x[0]],
+                                         bordes_completos_y + [bordes_completos_y[0]],
                                          'k-', linewidth=2, alpha=0.9, label='Bordes')
-                    # Dibujar los píxeles del municipio como puntos
-                    if coordenadas_pixeles:
-                        px_coords = list(zip(*coordenadas_pixeles))
-                        ax[2][0].scatter(px_coords[0], px_coords[1], c='blue', s=0.5, alpha=0.3, label='Píxeles del municipio')
-                    ax[2][0].set_title("Imagen con pixeles seleccionados")
+                    # Sombrear cada píxel según la fracción que aporta al municipio
+                    ax[2][0].imshow(pesos, cmap="Blues", alpha=0.45)
+                    ax[2][0].set_title(f"Cobertura por píxel (k={escala_a_usar})")
                     ax[2][0].legend(loc='upper right', fontsize=8)
 
-                    if pixeles_imagen:  # Solo mostrar histograma si hay píxeles
-                        ax[2][1].hist(pixeles_imagen, bins=50, alpha=0.7, label='Píxeles del municipio', color='blue')
+                # Métricas ponderadas por área: invariantes al factor de escala
+                metricas = metricas_ponderadas(imagen_recortada, pesos)
+
+                if show_plots:
+                    dentro = pesos > 0
+                    if dentro.any():
+                        ax[2][1].hist(imagen_recortada[dentro].astype(float), bins=50,
+                                      weights=pesos[dentro], alpha=0.7,
+                                      label='Píxeles del municipio', color='blue')
                         ax[2][1].grid(True)
-                        ax[2][1].set_title("Histograma de radiación")
+                        ax[2][1].set_title("Histograma de radiación (ponderado por área)")
                         ax[2][1].legend()
                     else:
-                        ax[2][1].text(0.5, 0.5, "No hay píxeles seleccionados", 
+                        ax[2][1].text(0.5, 0.5, "No hay píxeles seleccionados",
                                     ha='center', va='center', transform=ax[2][1].transAxes)
                         ax[2][1].set_title("Sin datos")
 
                 # Validar que hay píxeles para procesar
-                if not pixeles_imagen:
+                if metricas is None:
                     print("No se encontraron píxeles dentro del área del municipio.")
                     return None
 
                 # Crear medición usando solo MedicionResultado
-                medicion = MedicionResultado(
-                    Fecha=date_obj,
-                    Cantidad_de_pixeles=len(pixeles_imagen),
-                    Suma_de_radianza=float(np.sum(pixeles_imagen)),
-                    Media_de_radianza=float(np.mean(pixeles_imagen)),
-                    Desviacion_estandar_de_radianza=float(np.std(pixeles_imagen)),
-                    Maximo_de_radianza=float(np.max(pixeles_imagen)),
-                    Minimo_de_radianza=float(np.min(pixeles_imagen)),
-                    Percentil_25_de_radianza=float(np.percentile(pixeles_imagen, 25)),
-                    Percentil_50_de_radianza=float(np.percentile(pixeles_imagen, 50)),
-                    Percentil_75_de_radianza=float(np.percentile(pixeles_imagen, 75)),
-                )
+                medicion = MedicionResultado(Fecha=date_obj, **metricas)
                 if show_plots:
                     # Guardar la figura usando la función 
                     plt.show()

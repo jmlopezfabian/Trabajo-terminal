@@ -2,7 +2,10 @@
 # Python >= 3.8
 
 # Procesamiento de datos
-numpy>=1.21.0,<2.0.0
+# numpy 1.x elide temporales de forma incorrecta en Python 3.14: a partir de
+# 256 KB, `b = ~a` sobreescribe `a` en sitio y corrompe el resultado en
+# silencio. La 2.x lo corrige y trae ruedas para 3.14.
+numpy>=2.1.0,<3.0.0
 pandas>=1.3.0,<3.0.0
 h5py>=3.6.0,<4.0.0
 scipy>=1.7.0,<2.0.0

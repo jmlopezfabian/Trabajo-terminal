@@ -8,7 +8,7 @@ class CoordenadasPixeles(BaseModel):
 
 class MedicionResultado(BaseModel):
     Fecha: date = Field(..., description="Date of the measurement")
-    Cantidad_de_pixeles: int = Field(..., description="Total number of pixels inside the municipality")
+    Cantidad_de_pixeles: float = Field(..., description="Area of the municipality in original pixels (sum of per-pixel coverage; invariant to the scale factor)")
     Suma_de_radianza: float = Field(..., description="Sum of the radiance")
     Media_de_radianza: float = Field(..., description="Mean of the radiance")
     Desviacion_estandar_de_radianza: float = Field(..., description="Standard deviation of the radiance")

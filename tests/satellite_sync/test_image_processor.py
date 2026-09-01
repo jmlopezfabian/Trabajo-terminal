@@ -7,6 +7,8 @@ from satellite_sync.image_processor import (
     recortar_imagen,
     completar_bordes,
     get_pixeles,
+    pesos_municipio,
+    metricas_ponderadas,
 )
 
 
@@ -158,3 +160,116 @@ class TestGetPixeles:
         bordes = _borde_rectangular(1, 1, 3, 3) + [(-4, 2), (99, 2), (2, -7)]
         pixels = set(get_pixeles(img, bordes))
         assert pixels == {(2, 2)}
+
+
+def _cuadrado(lado, k=1, origen=2.0):
+    """Vértices de un cuadrado cerrado, ya escalados por k."""
+    x0 = origen * k
+    x1 = (origen + lado) * k
+    x = np.array([x0, x1, x1, x0, x0])
+    y = np.array([x0, x0, x1, x1, x0])
+    return x, y
+
+
+class TestCompletarBordesIndependienteDeK:
+    def test_arista_vertical_no_produce_nan(self):
+        # dx = 0 hacía pendiente infinita y int(NaN) reventaba
+        x = np.array([5.0, 5.0])
+        y = np.array([0.0, 40.0])
+        bordes = completar_bordes(x, y)
+        assert all(isinstance(c, int) for p in bordes for c in p)
+        assert len(bordes) >= 40
+
+    def test_arista_larga_no_deja_huecos(self):
+        # Con 100 puntos fijos, una arista de 400 px quedaba con huecos
+        x = np.linspace(0.0, 400.0, 2)
+        y = np.array([0.0, 300.0])
+        bordes = sorted(completar_bordes(x, y))
+        for (x0, y0), (x1, y1) in zip(bordes, bordes[1:]):
+            assert max(abs(x1 - x0), abs(y1 - y0)) <= 1
+
+    @pytest.mark.parametrize("k", [1, 2, 4, 8, 16, 32])
+    def test_borde_sella_el_poligono_para_cualquier_k(self, k):
+        x, y = _cuadrado(6, k)
+        alto = ancho = 10
+        pesos = pesos_municipio((alto, ancho), x, y, k, peso_borde=0.0)
+        # Si el trazo tuviera huecos, el relleno se fugaría y el área sería 0
+        assert pesos.sum() > 0
+
+
+class TestPesosMunicipio:
+    @pytest.mark.parametrize("k", [1, 2, 4, 8, 16])
+    def test_area_converge_al_valor_geometrico(self, k):
+        lado = 6
+        x, y = _cuadrado(lado, k)
+        pesos = pesos_municipio((10, 10), x, y, k)
+        assert pesos.sum() == pytest.approx(lado * lado, rel=0.05)
+
+    def test_pesos_acotados_en_cero_uno(self):
+        k = 8
+        x, y = _cuadrado(6, k)
+        pesos = pesos_municipio((10, 10), x, y, k)
+        assert pesos.min() >= 0.0
+        assert pesos.max() <= 1.0
+
+    def test_forma_es_la_del_recorte_no_la_de_la_malla_fina(self):
+        k = 8
+        x, y = _cuadrado(6, k)
+        pesos = pesos_municipio((10, 10), x, y, k)
+        assert pesos.shape == (10, 10)
+
+    def test_peso_borde_acota_el_area_por_ambos_lados(self):
+        k = 4
+        x, y = _cuadrado(6, k)
+        sin_borde = pesos_municipio((10, 10), x, y, k, peso_borde=0.0).sum()
+        con_borde = pesos_municipio((10, 10), x, y, k, peso_borde=1.0).sum()
+        assert sin_borde <= 36 <= con_borde
+
+    def test_mascara_no_se_corrompe_en_arreglos_grandes(self):
+        # Regresión: con numpy 1.x sobre Python 3.14, `~mascara` sobreescribía
+        # la máscara en sitio a partir de 256 KB e inflaba el área al doble.
+        # La malla fina supera ese umbral: 35*16 x 35*16 = 313600 bytes.
+        k = 16
+        x, y = _cuadrado(28, k, origen=3.0)
+        pesos = pesos_municipio((35, 35), x, y, k)
+        assert pesos.sum() == pytest.approx(28 * 28, rel=0.02)
+
+
+class TestMetricasPonderadas:
+    def test_invariante_al_factor_de_escala(self):
+        rng = np.random.default_rng(0)
+        imagen = rng.uniform(10, 1000, size=(12, 12))
+        referencia = None
+        for k in [1, 2, 4, 8, 16]:
+            x, y = _cuadrado(6, k)
+            pesos = pesos_municipio(imagen.shape, x, y, k)
+            m = metricas_ponderadas(imagen, pesos)
+            if referencia is None:
+                referencia = m
+            else:
+                assert m["Suma_de_radianza"] == pytest.approx(referencia["Suma_de_radianza"], rel=0.05)
+                assert m["Media_de_radianza"] == pytest.approx(referencia["Media_de_radianza"], rel=0.05)
+                assert m["Cantidad_de_pixeles"] == pytest.approx(referencia["Cantidad_de_pixeles"], rel=0.05)
+
+    def test_suma_no_se_infla_con_k(self):
+        imagen = np.full((12, 12), 100.0)
+        sumas = []
+        for k in [1, 4, 16]:
+            x, y = _cuadrado(6, k)
+            pesos = pesos_municipio(imagen.shape, x, y, k)
+            sumas.append(metricas_ponderadas(imagen, pesos)["Suma_de_radianza"])
+        # Antes esto crecía como k^2: 3600, 57600, 921600
+        assert max(sumas) / min(sumas) < 1.1
+        assert sumas[0] == pytest.approx(3600, rel=0.05)
+
+    def test_cantidad_de_pixeles_es_area_no_conteo_de_subpixeles(self):
+        imagen = np.ones((12, 12))
+        k = 8
+        x, y = _cuadrado(6, k)
+        pesos = pesos_municipio(imagen.shape, x, y, k)
+        m = metricas_ponderadas(imagen, pesos)
+        assert m["Cantidad_de_pixeles"] == pytest.approx(36, rel=0.05)
+
+    def test_municipio_vacio_devuelve_none(self):
+        imagen = np.ones((5, 5))
+        assert metricas_ponderadas(imagen, np.zeros((5, 5))) is None
