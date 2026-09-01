@@ -148,7 +148,22 @@ forma del municipio.
 
 La tabla de cobertura (`ntl_data/municipios_coordenadas_pixeles.json`) se regenera
 con `python scripts/generar_coordenadas_pixeles.py`; solo hace falta si cambian los
-polígonos municipales.
+polígonos municipales. La cobertura se calcula por intersección geométrica exacta,
+sin factor de subdivisión ni pesos que elegir.
+
+### Unidades: aviso importante
+
+Los valores de radianza están en **nW/(cm² sr)**, aplicando el `scale_factor` que
+declara el producto. Las series generadas **antes de septiembre de 2026** están en
+cuentas digitales sin escalar y son **diez veces mayores**: no se pueden concatenar
+con las nuevas sin convertir. Cada registro trae `Unidades_de_radianza` para poder
+distinguirlas.
+
+Los píxeles sin medición (`_FillValue`) se excluyen del agregado en vez de sumarse
+como radianza. `Fraccion_valida` indica qué parte del territorio del municipio traía
+dato: por debajo de 1.0, la suma cubre solo esa fracción. Las series anteriores
+incluyen 20 registros contaminados —cuatro fechas en las que el cuadrante entero
+vino vacío— que se retiran con `python scripts/purgar_registros_invalidos.py`.
 
 La API usa `ntl.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
 

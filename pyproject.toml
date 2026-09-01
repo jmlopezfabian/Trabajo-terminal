@@ -21,6 +21,8 @@ dependencies = [
     # distribuía y por eso nunca declaró sus dependencias.
     "scipy>=1.7",
     "matplotlib>=3.4",
+    # shapely: intersección exacta polígono-píxel en ntl.geometria.cobertura
+    "shapely>=2.0",
 ]
 
 [tool.setuptools.packages.find]

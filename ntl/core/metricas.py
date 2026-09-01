@@ -27,6 +27,13 @@ def metricas_ponderadas(valores: np.ndarray, pesos: np.ndarray) -> Optional[dict
     valores = np.asarray(valores, dtype=np.float64)
     pesos = np.asarray(pesos, dtype=np.float64)
 
+    # Los píxeles sin medición llegan como NaN. Descartarlos encoge el área, que es
+    # lo honesto: contarlos como radianza fue lo que arruinó cuatro fechas del
+    # histórico. Fraccion_valida deja constancia de cuánto territorio se perdió.
+    area_declarada = float(pesos.sum())
+    medibles = np.isfinite(valores) & (pesos > 0)
+    valores, pesos = valores[medibles], pesos[medibles]
+
     if valores.size == 0 or pesos.sum() <= 0:
         return None
 
@@ -47,6 +54,7 @@ def metricas_ponderadas(valores: np.ndarray, pesos: np.ndarray) -> Optional[dict
         "Percentil_25_de_radianza": float(p25),
         "Percentil_50_de_radianza": float(p50),
         "Percentil_75_de_radianza": float(p75),
+        "Fraccion_valida": (area / area_declarada) if area_declarada > 0 else 0.0,
     }
 
 

@@ -11,10 +11,21 @@ import numpy as np
 import pytest
 
 from ntl.core.config import PIXELES_MUNICIPIOS, RUTA_MUNICIPIOS
-from ntl.core.utils import extraer_coordenadas, load_coord_data, normalize_municipio
+from ntl.core.utils import (
+    esquina_superior_izquierda,
+    extraer_coordenadas,
+    load_coord_data,
+    normalize_municipio,
+)
+from ntl.geometria.cobertura import cobertura_exacta, poligono_en_pixeles
 from ntl.geometria.image_processor import pesos_municipio, recortar
 
 FORMA_CUADRANTE = (2400, 2400)
+
+
+@pytest.fixture(scope="module")
+def shapely_geometry():
+    return pytest.importorskip("shapely.geometry")
 
 
 @pytest.fixture(scope="module")
@@ -23,8 +34,6 @@ def tabla():
         return json.load(f)
 
 
-def _esquina(cuadrante):
-    return (-180.0 + 10.0 * int(cuadrante[1:3]), 90.0 - 10.0 * int(cuadrante[4:6]))
 
 
 class TestFormato:
@@ -63,11 +72,30 @@ class TestCoherenciaConLaGeometria:
         datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
 
         coordenadas = extraer_coordenadas(nombre)
-        vacia = np.zeros(FORMA_CUADRANTE, dtype=np.float32)
-        recorte, nx, ny = recortar(vacia, coordenadas, _esquina(datos.cuadrante), 32)
-        area_recalculada = float(pesos_municipio(recorte.shape, nx, ny, 32).sum())
+        poligono = poligono_en_pixeles(
+            coordenadas, esquina_superior_izquierda(datos.cuadrante), FORMA_CUADRANTE
+        )
+        area_recalculada = float(cobertura_exacta(poligono)[0].sum())
 
-        assert datos.area == pytest.approx(area_recalculada, rel=1e-4)
+        assert datos.area == pytest.approx(area_recalculada, rel=1e-6)
+
+    @pytest.mark.parametrize("nombre", ["Azcapotzalco", "Iztacalco"])
+    def test_la_aproximacion_por_subdivision_converge_a_la_tabla(self, nombre):
+        """`pesos_municipio` a k=32 debe acercarse a la cobertura exacta.
+
+        Comprueba que la aproximación por subdivisión y el método exacto no se
+        hayan separado: `pesos_municipio` ya no genera la tabla, pero sigue
+        disponible y conviene que siga siendo correcto.
+        """
+        datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
+        coordenadas = extraer_coordenadas(nombre)
+        vacia = np.zeros(FORMA_CUADRANTE, dtype=np.float32)
+        recorte, nx, ny = recortar(
+            vacia, coordenadas, esquina_superior_izquierda(datos.cuadrante), 32
+        )
+        aproximada = float(pesos_municipio(recorte.shape, nx, ny, 32).sum())
+
+        assert aproximada == pytest.approx(datos.area, rel=1e-3)
 
     def test_el_area_supera_el_conteo_de_pixeles_interiores(self):
         """
@@ -109,13 +137,9 @@ class TestSuperficieOficial:
         )
         return abs(area) / 1e6
 
-    @staticmethod
-    def _esquina(cuadrante):
-        return (-180.0 + 10.0 * int(cuadrante[1:3]), 90.0 - 10.0 * int(cuadrante[4:6]))
-
     def _km2(self, geod, datos):
         res = 10 / FORMA_CUADRANTE[1]
-        ul = self._esquina(datos.cuadrante)
+        ul = esquina_superior_izquierda(datos.cuadrante)
         return sum(w * self._area_celda_km2(geod, x, y, ul, res) for x, y, w in datos.pesos)
 
     def test_la_suma_de_las_alcaldias_es_la_superficie_de_la_cdmx(self, tabla):
@@ -143,3 +167,177 @@ class TestSuperficieOficial:
 
         datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
         assert self._km2(geod, datos) == pytest.approx(area_geodesica, rel=1e-3)
+
+
+RESOLUCION = 10 / FORMA_CUADRANTE[1]
+
+
+class TestOracleDeShapely:
+    """
+    Los pesos deben coincidir con el área exacta de intersección polígono-píxel.
+
+    `pesos_municipio` decide la geometría sobre una submalla de 32x32 y asigna
+    0.5 a los subpíxeles que el trazo del borde atraviesa. Es un heurístico
+    razonable, no una fórmula de área, así que conviene atarlo a la única
+    respuesta que no admite discusión: recortar el polígono contra cada celda.
+
+    ATENCIÓN a lo que esta prueba NO valida. Construye las celdas con el mismo
+    origen que usa el pipeline, así que confirma el *rasterizado*, no el
+    *anclaje* de la retícula. Si la esquina del cuadrante estuviera mal, oracle
+    y pipeline coincidirían y los dos estarían desplazados. De eso se encarga
+    `utils.verificar_georreferencia`, que contrasta el origen contra el
+    StructMetadata.0 del archivo, y `scripts/sensibilidad_desplazamiento.py`,
+    que mide lo que costaría equivocarse.
+    """
+
+    # Tolerancias: el área agregada es lo que alimenta las métricas, y ahí el
+    # heurístico del borde se cancela entre celdas. Por píxel suelto puede
+    # desviarse más, porque el trazo reparte la celda a ojo.
+    TOLERANCIA_AREA = 0.005      # 0.5% del área del municipio
+    TOLERANCIA_PIXEL = 0.05      # cobertura, en [0,1]
+
+    # Una celda que el oracle da como tocada pero el pipeline no lista solo
+    # importa si aporta área apreciable; por debajo de esto es una esquina.
+    COBERTURA_DESPRECIABLE = 0.01
+
+    @staticmethod
+    def _cobertura_exacta(poligono, cuadrante, celdas):
+        """Fracción de cada celda que cubre el polígono, con recorte exacto."""
+        from shapely.geometry import box
+
+        ulx, uly = esquina_superior_izquierda(cuadrante)
+        exacta = {}
+        for x, y in celdas:
+            lon = ulx + x * RESOLUCION
+            lat = uly - y * RESOLUCION
+            celda = box(lon, lat - RESOLUCION, lon + RESOLUCION, lat)
+            area = poligono.intersection(celda).area
+            if area > 0:
+                exacta[(x, y)] = area / (RESOLUCION * RESOLUCION)
+        return exacta
+
+    @pytest.mark.parametrize(
+        "nombre",
+        [
+            "Iztacalco",              # pequeño y compacto
+            "Azcapotzalco",
+            "Álvaro Obregón",         # borde muy recortado
+            "Milpa Alta",             # grande, con tramos casi rectos
+            "Monterrey",              # otro cuadrante, latitud distinta
+        ],
+    )
+    def test_los_pesos_reproducen_el_area_exacta(self, nombre, shapely_geometry):
+        datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
+        poligono = shapely_geometry.Polygon(extraer_coordenadas(nombre))
+        if not poligono.is_valid:
+            poligono = poligono.buffer(0)
+
+        pesos = {(x, y): w for x, y, w in datos.pesos}
+        # Un anillo de holgura alrededor: así el oracle puede encontrar celdas
+        # que el pipeline se hubiera dejado fuera.
+        xs = [x for x, _ in pesos]
+        ys = [y for _, y in pesos]
+        celdas = [
+            (x, y)
+            for y in range(min(ys) - 1, max(ys) + 2)
+            for x in range(min(xs) - 1, max(xs) + 2)
+        ]
+        exacta = self._cobertura_exacta(poligono, datos.cuadrante, celdas)
+
+        area_pipeline = sum(pesos.values())
+        area_exacta = sum(exacta.values())
+        assert area_pipeline == pytest.approx(area_exacta, rel=self.TOLERANCIA_AREA)
+
+        peor = max(
+            (abs(pesos.get(c, 0.0) - exacta.get(c, 0.0)), c)
+            for c in set(pesos) | set(exacta)
+        )
+        assert peor[0] < self.TOLERANCIA_PIXEL, f"{nombre}: peor celda {peor[1]}"
+
+    @pytest.mark.parametrize("nombre", ["Iztacalco", "Álvaro Obregón", "Monterrey"])
+    def test_no_falta_ni_sobra_ningun_pixel(self, nombre, shapely_geometry):
+        """El conjunto de celdas tocadas debe ser el mismo, no solo su suma."""
+        datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
+        poligono = shapely_geometry.Polygon(extraer_coordenadas(nombre))
+        if not poligono.is_valid:
+            poligono = poligono.buffer(0)
+
+        pesos = {(x, y): w for x, y, w in datos.pesos}
+        xs = [x for x, _ in pesos]
+        ys = [y for _, y in pesos]
+        celdas = [
+            (x, y)
+            for y in range(min(ys) - 1, max(ys) + 2)
+            for x in range(min(xs) - 1, max(xs) + 2)
+        ]
+        exacta = self._cobertura_exacta(poligono, datos.cuadrante, celdas)
+
+        faltan = [c for c, w in exacta.items() if c not in pesos and w > self.COBERTURA_DESPRECIABLE]
+        sobran = [c for c in pesos if c not in exacta]
+        assert not faltan, f"{nombre}: el pipeline se deja {len(faltan)} celdas, p.ej. {faltan[:5]}"
+        assert not sobran, f"{nombre}: el pipeline inventa {len(sobran)} celdas, p.ej. {sobran[:5]}"
+
+
+class TestParticionDeFronteras:
+    """
+    Dos municipios vecinos se reparten el píxel que comparten; no lo duplican.
+
+    Cada uno se rasteriza por su cuenta y sin saber del otro, así que nada
+    obliga a que las coberturas de una misma celda sumen uno. Si el trazo del
+    borde se contara entero a los dos lados, la frontera aparecería dos veces:
+    el área agregada crecería y la radianza de las zonas limítrofes pesaría el
+    doble. Esta prueba es lo que descarta ese doble conteo.
+
+    El margen sale del heurístico: sobre la celda que el borde cruza cada lado
+    reclama media traza, y las dos mitades no tienen por qué encajar al
+    milímetro.
+    """
+
+    EXCESO_TOLERADO = 0.02
+
+    @staticmethod
+    def _cobertura_acumulada(tabla, cuadrante):
+        acumulada = {}
+        for clave, datos in tabla.items():
+            if datos["cuadrante"] != cuadrante:
+                continue
+            for x, y, w in datos["pesos"]:
+                celda = (x, y)
+                total, quienes = acumulada.get(celda, (0.0, []))
+                acumulada[celda] = (total + w, quienes + [(clave, w)])
+        return acumulada
+
+    def test_hay_pixeles_compartidos_que_examinar(self, tabla):
+        """Si no hubiera fronteras comunes, la prueba siguiente no probaría nada."""
+        acumulada = self._cobertura_acumulada(tabla, "h08v07")
+        compartidos = [c for c, (_, quienes) in acumulada.items() if len(quienes) > 1]
+        assert len(compartidos) > 100, len(compartidos)
+
+    def test_ningun_pixel_se_reparte_mas_de_una_vez(self, tabla):
+        acumulada = self._cobertura_acumulada(tabla, "h08v07")
+
+        excedidos = [
+            (celda, total, quienes)
+            for celda, (total, quienes) in acumulada.items()
+            if total > 1.0 + self.EXCESO_TOLERADO
+        ]
+        assert not excedidos, (
+            f"{len(excedidos)} píxeles con cobertura total > 1; el peor es "
+            f"{max(excedidos, key=lambda e: e[1])}"
+        )
+
+    def test_el_reparto_de_la_frontera_no_infla_el_area(self, tabla):
+        """
+        El exceso agregado sobre todos los píxeles compartidos debe ser ínfimo.
+
+        Un solo píxel puede pasarse de 1 sin que importe; lo que rompería las
+        métricas es que el sesgo apunte siempre en la misma dirección.
+        """
+        acumulada = self._cobertura_acumulada(tabla, "h08v07")
+        compartidos = {c: t for c, (t, quienes) in acumulada.items() if len(quienes) > 1}
+
+        exceso = sum(max(0.0, t - 1.0) for t in compartidos.values())
+        assert exceso / len(compartidos) < 0.001, (
+            f"exceso medio {exceso / len(compartidos):.4f} px sobre "
+            f"{len(compartidos)} píxeles compartidos"
+        )
