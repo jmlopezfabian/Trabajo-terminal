@@ -15,6 +15,12 @@ dependencies = [
     "pydantic>=2.0",
     "beautifulsoup4>=4.10",
     "python-dotenv>=1.0",
+    # requests: descarga bloqueante en core.downloader
+    "requests>=2.26",
+    # scipy y matplotlib: los usa vnp46a1.geometria, que hasta ahora no se
+    # distribuía y por eso nunca declaró sus dependencias.
+    "scipy>=1.7",
+    "matplotlib>=3.4",
 ]
 
 [tool.setuptools.packages.find]
