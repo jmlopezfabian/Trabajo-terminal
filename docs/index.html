@@ -38,10 +38,10 @@
           <li><a href="#extraccion">Extracción de archivos</a></li>
           <li><a href="#coordenadas">Coordenadas de la imagen</a></li>
           <li><a href="#bordes">Bordes del municipio</a></li>
-          <li><a href="#recorte">Recorte y redimensión</a></li>
+          <li><a href="#recorte">Recorte y factor de escala</a></li>
           <li><a href="#cierre">Cierre de bordes</a></li>
-          <li><a href="#pixeles">Extracción de píxeles</a></li>
-          <li><a href="#estadisticas">Métricas estadísticas</a></li>
+          <li><a href="#pixeles">Píxeles y pesos de cobertura</a></li>
+          <li><a href="#estadisticas">Métricas ponderadas</a></li>
         </ol>
       </li>
       <li><a href="#optimizacion">Optimizaciones</a>
@@ -49,6 +49,13 @@
           <li><a href="#precomputo">Precomputo de coordenadas</a></li>
           <li><a href="#asincrono">Procesamiento asíncrono</a></li>
           <li><a href="#cuadrantes">Agrupación por cuadrante</a></li>
+        </ol>
+      </li>
+      <li><a href="#validacion">Validación del factor de escala</a>
+        <ol style="font-size:0.95em;margin-top:0.3rem">
+          <li><a href="#referencia">Referencia geométrica exacta</a></li>
+          <li><a href="#sesgo-frontera">Sesgo de la frontera</a></li>
+          <li><a href="#convergencia">Convergencia y elección del factor</a></li>
         </ol>
       </li>
       <li><a href="#conjunto-de-datos">Conjunto de datos resultante</a></li>
@@ -73,7 +80,7 @@
     <!-- Abstract -->
     <div class="abstract">
       <strong>Resumen</strong>
-      Se presenta la metodología computacional desarrollada para extraer, georreferenciar y agregar datos de luminosidad nocturna del producto satelital VNP46A1 (Black Marble) de la NASA a nivel de municipio. El proceso transforma imágenes diarias en formato HDF5, descargadas del servidor LAADS DAAC, en un conjunto de estadísticas descriptivas de radianza por municipio y fecha. La metodología comprende la transformación de coordenadas geográficas al sistema de referencia de la imagen, el cierre de bordes del polígono municipal mediante interpolación lineal, la identificación de píxeles interiores mediante búsqueda en amplitud, y la detección de regiones desconectadas mediante una búsqueda inversa desde los bordes de la imagen. Se describen también las optimizaciones implementadas —precomputo de coordenadas y procesamiento asíncrono por lotes— que redujeron el tiempo de procesamiento en un factor significativo.
+      Se presenta la metodología computacional desarrollada para extraer, georreferenciar y agregar datos de luminosidad nocturna del producto satelital VNP46A1 (Black Marble) de la NASA a nivel de municipio. El proceso transforma imágenes diarias en formato HDF5, descargadas del servidor LAADS DAAC, en un conjunto de estadísticas descriptivas de radianza por municipio y fecha. La metodología comprende la transformación de coordenadas geográficas al sistema de referencia de la imagen, el cierre de bordes del polígono municipal mediante interpolación lineal, la identificación de píxeles interiores mediante búsqueda en amplitud, y la detección de regiones desconectadas mediante una búsqueda inversa desde los bordes de la imagen. El factor de escala que refina la delimitación se aplica sobre la máscara del municipio y no sobre la radianza, lo que permite expresar las métricas como agregados ponderados por el área que cada píxel aporta y las vuelve invariantes a dicho factor. Se valida la delimitación contra la intersección geométrica exacta del polígono con la retícula, cuantificando el sesgo del tratamiento de la frontera y estableciendo un criterio analítico para elegir el factor. Se describen también las optimizaciones implementadas —precomputo de coordenadas y procesamiento asíncrono por lotes— que redujeron el tiempo de procesamiento en un factor significativo.
     </div>
 
     <!-- ─────────────────────────────────────── -->
@@ -165,7 +172,68 @@
       $$I' = \text{Kronecker}(I_{\text{municipio}},\ \mathbf{1}_{f \times f}) \tag{5}$$
     </div>
 
-    <p>Esta operación aumenta la resolución espacial perceptual sin alterar el contenido radiométrico de la imagen original, lo que permite una delimitación más precisa de los bordes del polígono en el espacio discreto de píxeles.</p>
+    <p>La operación no aporta información radiométrica nueva: cada subpíxel es una copia exacta del píxel que lo contiene. Lo único que refina es la <em>decisión geométrica</em> de qué parte de cada píxel original cae dentro del polígono. Un píxel de frontera, que a resolución nativa debe aceptarse o descartarse entero, se subdivide en $f^2$ subpíxeles de los que solo se cuentan los interiores, recuperando así una aproximación a la fracción de área que el municipio cubre realmente sobre él.</p>
+
+    <p>Esta observación determina dónde conviene aplicar el factor. Como los valores replicados son redundantes, la implementación no materializa $I'$: construye la malla fina como una <em>máscara booleana</em> del municipio, la colapsa de inmediato a una matriz de pesos con la forma del recorte original y deja la radianza en su resolución nativa durante todo el proceso. La malla fina pasa así de ocupar 8 bytes por subpíxel, en punto flotante, a 1 byte, y las métricas se calculan siempre sobre $h \times w$ valores en lugar de $h\,w\,f^2$.</p>
+
+    <figure>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 210" font-family="Georgia, serif" font-size="12" style="max-width:100%;border:none">
+        <defs>
+          <marker id="arr3" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L7,3 z" fill="#8b949e"/>
+          </marker>
+        </defs>
+
+        <text x="8" y="16" font-weight="bold" font-size="11" fill="#adbac7">Factor sobre la radianza</text>
+        <rect x="8" y="26" width="86" height="34" rx="4" fill="#fff8e1" stroke="#e6c000" stroke-width="1.5"/>
+        <text x="51" y="41" text-anchor="middle" font-size="9.5">recorte</text>
+        <text x="51" y="53" text-anchor="middle" font-size="9.5">h × w</text>
+        <line x1="94" y1="43" x2="122" y2="43" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="124" y="26" width="104" height="34" rx="4" fill="#fdecea" stroke="#c62828" stroke-width="1.5"/>
+        <text x="176" y="41" text-anchor="middle" font-size="9.5">kron(radianza)</text>
+        <text x="176" y="53" text-anchor="middle" font-size="9.5">hf × wf  float64</text>
+        <line x1="228" y1="43" x2="256" y2="43" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="258" y="26" width="86" height="34" rx="4" fill="#fdecea" stroke="#c62828" stroke-width="1.5"/>
+        <text x="301" y="41" text-anchor="middle" font-size="9.5">relleno</text>
+        <text x="301" y="53" text-anchor="middle" font-size="9.5">hf × wf</text>
+        <line x1="344" y1="43" x2="372" y2="43" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="374" y="26" width="104" height="34" rx="4" fill="#fdecea" stroke="#c62828" stroke-width="1.5"/>
+        <text x="426" y="41" text-anchor="middle" font-size="9.5">lista de píxeles</text>
+        <text x="426" y="53" text-anchor="middle" font-size="9.5">O(hwf²) tuplas</text>
+        <line x1="478" y1="43" x2="506" y2="43" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="508" y="26" width="86" height="34" rx="4" fill="#fdecea" stroke="#c62828" stroke-width="1.5"/>
+        <text x="551" y="47" text-anchor="middle" font-size="9.5">métricas × f²</text>
+        <text x="600" y="47" font-size="11" fill="#f0827d">✗</text>
+
+        <line x1="8" y1="82" x2="632" y2="82" stroke="#30363d" stroke-width="1"/>
+
+        <text x="8" y="106" font-weight="bold" font-size="11" fill="#adbac7">Factor sobre la máscara</text>
+        <rect x="8" y="116" width="86" height="34" rx="4" fill="#fff8e1" stroke="#e6c000" stroke-width="1.5"/>
+        <text x="51" y="131" text-anchor="middle" font-size="9.5">recorte</text>
+        <text x="51" y="143" text-anchor="middle" font-size="9.5">h × w</text>
+        <line x1="94" y1="133" x2="122" y2="133" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="124" y="116" width="104" height="34" rx="4" fill="#e3f2fd" stroke="#1565c0" stroke-width="1.5"/>
+        <text x="176" y="131" text-anchor="middle" font-size="9.5">máscara fina</text>
+        <text x="176" y="143" text-anchor="middle" font-size="9.5">hf × wf  bool</text>
+        <line x1="228" y1="133" x2="256" y2="133" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="258" y="116" width="86" height="34" rx="4" fill="#e3f2fd" stroke="#1565c0" stroke-width="1.5"/>
+        <text x="301" y="131" text-anchor="middle" font-size="9.5">relleno</text>
+        <text x="301" y="143" text-anchor="middle" font-size="9.5">hf × wf</text>
+        <line x1="344" y1="133" x2="372" y2="133" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="374" y="116" width="104" height="34" rx="4" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+        <text x="426" y="131" text-anchor="middle" font-size="9.5">pesos w</text>
+        <text x="426" y="143" text-anchor="middle" font-size="9.5">h × w  en [0,1]</text>
+        <line x1="478" y1="133" x2="506" y2="133" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <rect x="508" y="116" width="86" height="34" rx="4" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+        <text x="551" y="131" text-anchor="middle" font-size="9.5" fill="#2e7d32">métricas</text>
+        <text x="551" y="143" text-anchor="middle" font-size="9.5" fill="#2e7d32">ponderadas</text>
+        <text x="600" y="137" font-size="11" fill="#56d364">✓</text>
+
+        <line x1="426" y1="150" x2="426" y2="176" stroke="#8b949e" stroke-width="1.2" marker-end="url(#arr3)"/>
+        <text x="436" y="181" font-size="9.5" fill="#adbac7">la radianza nunca sale de su resolución nativa</text>
+      </svg>
+      <figcaption><strong>Figura 2.</strong> Dónde se aplica el factor de escala. Replicar la radianza multiplica la memoria por $f^2$ y arrastra ese factor hasta las métricas; construir la malla fina sobre la máscara y colapsarla a pesos deja las métricas en unidades del píxel original.</figcaption>
+    </figure>
 
     <h3 class="subsection" id="cierre">Cierre de bordes del polígono</h3>
 
@@ -175,19 +243,21 @@
       $$d_i = \sqrt{(x_{i+1} - x_i)^2 + (y_{i+1} - y_i)^2} \tag{6}$$
     </div>
 
-    <p>Cuando $d_i > 1$, existe al menos un píxel de separación entre ambos puntos. En ese caso, se insertan puntos intermedios mediante interpolación lineal. Dado que la pendiente de la recta entre ambos puntos es:</p>
+    <p>Cuando $d_i > 1$, existe al menos un píxel de separación entre ambos puntos y se insertan puntos intermedios por interpolación lineal. El número de muestras debe derivarse de la longitud de la arista, no fijarse por adelantado: las distancias $d_i$ se miden ya en la malla fina, de modo que crecen proporcionalmente al factor de escala. Se generan</p>
 
     <div class="math-block">
-      $$m_i = \frac{y_{i+1} - y_i}{x_{i+1} - x_i} \tag{7}$$
+      $$n_i = 2\,\lceil d_i \rceil + 1 \tag{7}$$
     </div>
 
-    <p>se generan 100 puntos equiespaciados $(x'_j, y'_j)$ entre $(x_i, y_i)$ y $(x_{i+1}, y_{i+1})$ siguiendo la ecuación:</p>
+    <p>muestras, es decir dos por píxel de arista, lo que garantiza que dos puntos consecutivos caigan siempre en celdas iguales o adyacentes. La interpolación se formula de manera paramétrica sobre $t_j = j/(n_i - 1)$ con $j = 0,\dots,n_i-1$:</p>
 
     <div class="math-block">
-      $$y'_j = m_i \cdot (x'_j - x_i) + y_i \tag{8}$$
+      $$(x'_j,\, y'_j) = (x_i,\, y_i) + t_j \cdot (x_{i+1} - x_i,\; y_{i+1} - y_i) \tag{8}$$
     </div>
 
-    <p>El resultado es una lista densa de coordenadas enteras que forma un borde cerrado y continuo en el espacio de píxeles, que actúa como contorno del polígono municipal en la imagen ampliada.</p>
+    <p>Esta forma es preferible a despejar $y$ en función de $x$ mediante la pendiente $m_i = (y_{i+1}-y_i)/(x_{i+1}-x_i)$, porque las aristas verticales del polígono, en las que $x_{i+1} = x_i$, producen una pendiente indefinida y coordenadas no numéricas. Ambas condiciones —densidad insuficiente y pendiente indefinida— solo se manifiestan cuando $d_i$ supera cierto umbral, por lo que permanecen latentes a resolución nativa y se activan al aumentar el factor de escala.</p>
+
+    <p>El resultado es una lista densa de coordenadas enteras que forma un borde cerrado y continuo, sin huecos por los que el relleno pueda propagarse hacia el interior, para cualquier valor de $f$.</p>
 
     <h3 class="subsection" id="pixeles">Extracción de píxeles interiores del municipio</h3>
 
@@ -197,7 +267,15 @@
       $$\text{Interior} = \overline{\text{Exterior} \cup b} \tag{9}$$
     </div>
 
-    <p>es decir, todo píxel de la imagen recortada que no forma parte del borde y que no es alcanzable desde el marco. Cada píxel interior así identificado se registra y su valor de radianza $I_{j,k}$ se agrega al vector de luminosidad del municipio $NTL_{i,j}$.</p>
+    <p>es decir, todo subpíxel de la malla fina que no forma parte del borde y que no es alcanzable desde el marco.</p>
+
+    <p>El conjunto resultante se colapsa a la resolución original acumulando, para cada píxel $p$ del recorte, la fracción de sus $f^2$ subpíxeles que pertenecen al municipio. Los subpíxeles por los que pasa el trazo del borde reciben peso $\tfrac{1}{2}$, ya que la frontera los atraviesa por la mitad y contarlos enteros o descartarlos introduce sesgos de magnitud comparable y signo opuesto:</p>
+
+    <div class="math-block">
+      $$w_p = \frac{1}{f^2} \sum_{s \in p} \left( \mathbb{1}[s \in \text{Interior}] + \tfrac{1}{2}\,\mathbb{1}[s \in b] \right), \qquad w_p \in [0,1] \tag{10}$$
+    </div>
+
+    <p>La matriz de pesos $w$ tiene la forma del recorte y sustituye a la lista de coordenadas interiores: $w_p = 1$ para los píxeles completamente contenidos, $w_p = 0$ para los exteriores y un valor intermedio para los de frontera. Su suma es el área del municipio expresada en píxeles originales.</p>
 
     <p>Esta formulación no requiere ningún punto semilla dentro del polígono y, por lo tanto, elimina el cálculo del centroide geométrico que empleaban versiones anteriores del procesamiento. Sembrar la BFS en el centroide tenía dos problemas: en municipios con geometría cóncava el centroide puede caer <em>fuera</em> del polígono, en cuyo caso la búsqueda se desbordaba e incorporaba toda la imagen recortada; y aun cuando caía dentro, solo alcanzaba la componente conexa que lo contenía, dejando fuera las regiones internas desconectadas —los llamados <em>píxeles huérfanos</em>— que debían recuperarse en un segundo recorrido. Al partir del exterior, ambas situaciones quedan resueltas en un solo paso: las regiones internas desconectadas, como las de Oaxaca de Juárez, tampoco son alcanzables desde el marco y por construcción quedan clasificadas como interiores.</p>
 
@@ -205,12 +283,26 @@
 
     <figure>
       <img src="assets/Flujo_pixeles_hueco.PNG" alt="Proceso de identificación de píxeles interiores desde el exterior">
-      <figcaption><strong>Figura 2.</strong> Identificación de los píxeles del municipio. La búsqueda exterior (rojo) marca todas las regiones alcanzables desde el marco de la imagen; lo que no alcanza y no es borde constituye el interior del municipio, incluidas las regiones internas desconectadas entre sí.</figcaption>
+      <figcaption><strong>Figura 3.</strong> Identificación de los píxeles del municipio. La búsqueda exterior (rojo) marca todas las regiones alcanzables desde el marco de la imagen; lo que no alcanza y no es borde constituye el interior del municipio, incluidas las regiones internas desconectadas entre sí.</figcaption>
     </figure>
 
     <h3 class="subsection" id="estadisticas">Cómputo de métricas estadísticas</h3>
 
-    <p>Una vez completado el vector $NTL_{i,j}$ con todos los píxeles del municipio $i$ en la fecha $j$, se calculan las siguientes estadísticas descriptivas para resumir la distribución de luminosidad:</p>
+    <p>Las estadísticas se calculan sobre los píxeles del recorte ponderados por su cobertura $w_p$, no sobre un conteo de subpíxeles. El área $A$, la suma $\Sigma$ y la media $\mu$ del municipio $i$ en la fecha $j$ son:</p>
+
+    <div class="math-block">
+      $$A = \sum_p w_p, \qquad \Sigma = \sum_p w_p\, v_p, \qquad \mu = \frac{\Sigma}{A} \tag{11}$$
+    </div>
+
+    <p>donde $v_p$ es la radianza del píxel $p$. La dispersión se obtiene con la misma ponderación:</p>
+
+    <div class="math-block">
+      $$\sigma^2 = \frac{1}{A}\sum_p w_p\,(v_p - \mu)^2 \tag{12}$$
+    </div>
+
+    <p>Los percentiles se evalúan sobre la masa de área acumulada: ordenados los valores de forma creciente, $P_q$ es el $v_p$ en el que la fracción acumulada $\left(\sum_{p' \le p} w_{p'} - \tfrac{1}{2}w_p\right)/A$ alcanza $q$.</p>
+
+    <p>Esta formulación tiene una propiedad que la versión no ponderada no posee: <strong>todas las métricas son invariantes al factor de escala</strong>. Aumentar $f$ refina los pesos $w_p$, pero no multiplica ninguna cantidad, porque el conteo de subpíxeles queda normalizado dentro de la ecuación (10). En particular, $A$ es un área en píxeles originales —no un número de subpíxeles— y por lo tanto es comparable entre corridas con distinta configuración y entre municipios. El conjunto resultante es:</p>
 
     <table>
       <thead>
@@ -220,7 +312,7 @@
         </tr>
       </thead>
       <tbody>
-        <tr><td>Cantidad de píxeles ($N$)</td><td>Número de píxeles que conforman el municipio</td></tr>
+        <tr><td>Área del municipio ($A$)</td><td>Superficie del municipio en píxeles originales, suma de las coberturas $w_p$</td></tr>
         <tr><td>Suma de radianza ($\Sigma$)</td><td>Suma total de los valores de luminosidad del municipio</td></tr>
         <tr><td>Media de radianza ($\mu$)</td><td>Promedio aritmético de los valores de luminosidad</td></tr>
         <tr><td>Desviación estándar ($\sigma$)</td><td>Dispersión de los valores de luminosidad respecto a la media</td></tr>
@@ -303,8 +395,133 @@
         <text x="490" y="92" text-anchor="middle" font-size="10" fill="#2e7d32">× 1 (compartida)</text>
         <text x="540" y="90" font-size="11" fill="#2e7d32">× 1</text>
       </svg>
-      <figcaption><strong>Figura 3.</strong> Comparación del esquema de descargas sin y con agrupación por cuadrante. Cuando varios municipios comparten el mismo tile HDF5, la agrupación elimina las descargas redundantes.</figcaption>
+      <figcaption><strong>Figura 4.</strong> Comparación del esquema de descargas sin y con agrupación por cuadrante. Cuando varios municipios comparten el mismo tile HDF5, la agrupación elimina las descargas redundantes.</figcaption>
     </figure>
+
+    <!-- ─────────────────────────────────────── -->
+    <h2 class="section" id="validacion">Validación del factor de escala</h2>
+
+    <p>El factor de escala introduce dos preguntas que no se responden desde el propio procesamiento: si la ampliación mejora efectivamente la delimitación, y qué valor de $f$ conviene usar. Ambas requieren una referencia externa contra la cual medir.</p>
+
+    <h3 class="subsection" id="referencia">Referencia geométrica exacta</h3>
+
+    <p>La cobertura real de cada píxel puede calcularse de forma analítica, sin discretizar, como el área de la intersección entre el polígono municipal $P$ y el cuadrado unitario del píxel:</p>
+
+    <div class="math-block">
+      $$w_p^{*} = \operatorname{area}(P \cap p) \tag{13}$$
+    </div>
+
+    <p>Esta cantidad es el límite al que converge la ecuación (10) cuando $f \to \infty$, y proporciona la referencia contra la que se evalúa cualquier valor finito. Su cómputo con geometría preparada toma del orden de $10^{-2}$ s por municipio.</p>
+
+    <p>La referencia se contrastó primero con el histórico ya generado: el número de píxeles registrado en los 340 816 registros del conjunto 2012–2024 coincide con el número de celdas completamente interiores que predice la geometría, con una diferencia máxima de 1.8 %. Esto confirma que la versión previa del procesamiento conservaba el interior estricto y descartaba la franja de frontera completa.</p>
+
+    <h3 class="subsection" id="sesgo-frontera">Sesgo del tratamiento de la frontera</h3>
+
+    <p>Las celdas que el borde atraviesa están cubiertas por el polígono en una fracción media de 0.47 a 0.51 según el municipio, es decir, aproximadamente por la mitad. Descartarlas o aceptarlas enteras produce por tanto errores de magnitud similar y signo opuesto:</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Municipio</th>
+          <th>Área real (px)</th>
+          <th>Celdas de frontera</th>
+          <th>Descartar</th>
+          <th>Aceptar</th>
+          <th>Sesgo en $\mu$</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Iztacalco</td><td>114.4</td><td>68</td><td>−30.1 %</td><td>+29.4 %</td><td>−1.9 %</td></tr>
+        <tr><td>Oaxaca de Juárez</td><td>226.4</td><td>144</td><td>−30.2 %</td><td>+33.4 %</td><td>+12.2 %</td></tr>
+        <tr><td>Cuajimalpa de Morelos</td><td>352.3</td><td>158</td><td>−21.4 %</td><td>+23.5 %</td><td>+1.3 %</td></tr>
+        <tr><td>La Magdalena Contreras</td><td>313.9</td><td>127</td><td>−19.1 %</td><td>+21.4 %</td><td>−10.3 %</td></tr>
+        <tr><td>Azcapotzalco</td><td>166.2</td><td>66</td><td>−19.4 %</td><td>+20.4 %</td><td>−0.1 %</td></tr>
+        <tr><td>Iztapalapa</td><td>560.4</td><td>155</td><td>−12.7 %</td><td>+14.9 %</td><td>+2.9 %</td></tr>
+        <tr><td>Milpa Alta</td><td>1475.2</td><td>207</td><td>−6.9 %</td><td>+7.1 %</td><td>−1.1 %</td></tr>
+      </tbody>
+    </table>
+
+    <p>El anillo de frontera tiene ancho fijo de un píxel, de modo que su tamaño crece con el perímetro mientras el interior crece con el área: el sesgo relativo escala con $P/A$ y castiga a los municipios pequeños o de contorno irregular. A 463 m por píxel, una alcaldía de 23 km² como Iztacalco pierde casi un tercio de su superficie.</p>
+
+    <p>La última columna muestra un efecto que ninguna constante puede corregir: la frontera no tiene el mismo brillo que el interior, así que descartarla también deforma la media. En Oaxaca de Juárez la periferia es rural y oscura, y su exclusión <em>infla</em> $\mu$ un 12.2 %; en La Magdalena Contreras la periferia es más luminosa que el núcleo montañoso y su exclusión la <em>deprime</em> un 10.3 %. El signo depende de la morfología urbana de cada municipio.</p>
+
+    <h3 class="subsection" id="convergencia">Convergencia y elección del factor</h3>
+
+    <p>Medido contra la referencia (13), el error del área obedece una ley de potencia limpia. El producto del error por el factor es constante para cada municipio, con un coeficiente de variación entre 1.1 % y 5 % a lo largo de todo el rango:</p>
+
+    <div class="math-block">
+      $$\bigl|\varepsilon_m(f)\bigr| \cdot f = a_m, \qquad a_m \approx 54.6\,\frac{P_m}{A_m} \quad (R^2 = 0.868) \tag{14}$$
+    </div>
+
+    <p>La constante $a_m$ coincide con el sesgo medido en $f = 1$, que se obtiene de la pura geometría del polígono sin procesar ninguna imagen. En consecuencia, el factor óptimo no requiere un barrido experimental: se despeja para la tolerancia deseada.</p>
+
+    <div class="math-block">
+      $$f^{*}_m = \left\lceil \frac{a_m}{\text{tolerancia en \%}} \right\rceil \tag{15}$$
+    </div>
+
+    <p>Para las 17 demarcaciones procesadas, $a_m$ va de 6.8 (Milpa Alta) a 30.3 (Iztacalco), lo que exige factores entre 7 y 31 para alcanzar 1 % de error si la frontera se descarta.</p>
+
+    <figure>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" font-family="Georgia, serif" font-size="12" style="max-width:100%;border:none">
+        <!-- ejes -->
+        <line x1="70" y1="140" x2="618" y2="140" stroke="#484f58" stroke-width="1"/>
+        <line x1="70" y1="30" x2="70" y2="250" stroke="#484f58" stroke-width="1"/>
+        <!-- rejilla y -->
+        <line x1="70" y1="30" x2="618" y2="30" stroke="#21262d" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <line x1="70" y1="85" x2="618" y2="85" stroke="#21262d" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <line x1="70" y1="195" x2="618" y2="195" stroke="#21262d" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <line x1="70" y1="250" x2="618" y2="250" stroke="#21262d" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <text x="62" y="34" text-anchor="end" font-size="9.5" fill="#7d8590">+20 %</text>
+        <text x="62" y="89" text-anchor="end" font-size="9.5" fill="#7d8590">+10 %</text>
+        <text x="62" y="144" text-anchor="end" font-size="9.5" fill="#7d8590">0</text>
+        <text x="62" y="199" text-anchor="end" font-size="9.5" fill="#7d8590">−10 %</text>
+        <text x="62" y="254" text-anchor="end" font-size="9.5" fill="#7d8590">−20 %</text>
+        <!-- eje x -->
+        <text x="70"  y="270" text-anchor="middle" font-size="9.5" fill="#7d8590">1</text>
+        <text x="160" y="270" text-anchor="middle" font-size="9.5" fill="#7d8590">2</text>
+        <text x="250" y="270" text-anchor="middle" font-size="9.5" fill="#7d8590">4</text>
+        <text x="340" y="270" text-anchor="middle" font-size="9.5" fill="#7d8590">8</text>
+        <text x="430" y="270" text-anchor="middle" font-size="9.5" fill="#7d8590">16</text>
+        <text x="520" y="270" text-anchor="middle" font-size="9.5" fill="#7d8590">32</text>
+        <text x="610" y="270" text-anchor="middle" font-size="9.5" fill="#7d8590">64</text>
+        <text x="344" y="290" text-anchor="middle" font-size="10" fill="#adbac7">factor de escala f  (escala logarítmica)</text>
+
+        <!-- aceptar la frontera entera -->
+        <polyline points="70,34.6 160,86.7 250,114.6 340,127.0 430,133.6 520,136.8 610,138.4"
+                  fill="none" stroke="#c62828" stroke-width="1.8"/>
+        <!-- descartar la frontera -->
+        <polyline points="70,246.4 160,194.3 250,166.0 340,152.8 430,146.5 520,143.2 610,141.6"
+                  fill="none" stroke="#e6c000" stroke-width="1.8"/>
+        <!-- peso 1/2 -->
+        <polyline points="70,140.5 160,140.5 250,140.3 340,139.9 430,140.1 520,140.1 610,140.0"
+                  fill="none" stroke="#56d364" stroke-width="2.4"/>
+
+        <text x="180" y="70" font-size="10" fill="#c62828">aceptar la frontera entera</text>
+        <text x="180" y="222" font-size="10" fill="#e6c000">descartar la frontera</text>
+        <text x="286" y="122" font-size="10" fill="#56d364">peso ½ (ec. 10)</text>
+      </svg>
+      <figcaption><strong>Figura 5.</strong> Error del área frente al factor de escala en Azcapotzalco, medido contra la intersección geométrica exacta. Las dos reglas binarias convergen como $1/f$ desde signos opuestos; ponderar la frontera con $\tfrac{1}{2}$ sitúa el error por debajo de 0.1 % ya en $f = 1$.</figcaption>
+    </figure>
+
+    <p>La regla de la ecuación (10) hace que el sesgo dominante desaparezca sin necesidad de ampliar nada: en 15 de las 17 demarcaciones el error del área en $f = 1$ queda dentro de ±0.2 %, frente al −6.9 % a −30.2 % que produce descartar la frontera. Las excepciones son los contornos muy sinuosos, como Oaxaca de Juárez, donde el trazo del borde ocupa más de una celda por tramo y el error se estabiliza en +1.8 % hasta $f = 16$.</p>
+
+    <p>Verificada la invarianza sobre una imagen real (VNP46A1.A2025026.h08v07), las métricas del municipio de Azcapotzalco frente al valor exacto son:</p>
+
+    <table>
+      <thead>
+        <tr><th>$f$</th><th>Área</th><th>Suma</th><th>Media</th><th>$\sigma$</th><th>$P_{50}$</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>166.00</td><td>144 956</td><td>873.23</td><td>124.54</td><td>865</td></tr>
+        <tr><td>8</td><td>166.19</td><td>145 333</td><td>874.51</td><td>120.05</td><td>865</td></tr>
+        <tr><td>32</td><td>166.14</td><td>145 297</td><td>874.54</td><td>119.99</td><td>865</td></tr>
+        <tr><td><em>exacto</em></td><td><em>166.15</em></td><td><em>145 306</em></td><td><em>874.54</em></td><td><em>120.00</em></td><td><em>865</em></td></tr>
+      </tbody>
+    </table>
+
+    <p>El costo también cambia de orden. Aplicar el factor sobre la máscara y no sobre la radianza, junto con la interpolación de la ecuación (8), reduce el procesamiento de Iztapalapa con $f = 16$ de 41.6 s a 6.7 ms y la memoria de 2.76 MB a 0.36 MB. El grueso de la mejora proviene del trazado del borde, cuya verificación de duplicados sobre una lista creciente lo hacía cuadrático en el número de puntos.</p>
+
+    <p>Sobre la serie histórica, el efecto del sesgo depende del uso. El factor de corrección $\Sigma^{*}/\Sigma_{f=1}$ resultó estable en el tiempo —coeficiente de variación menor a 0.71 % entre cinco fechas de 2025— y la correlación entre la serie previa y la corregida es 1.0000. Los análisis puramente temporales dentro de un mismo municipio, como tasas de crecimiento o descomposición de tendencia, no se ven afectados: el sesgo actúa como un factor multiplicativo constante. Las comparaciones transversales sí lo están, porque el sesgo varía entre −6.9 % y −30.2 % según la forma del municipio. Recalculando la densidad media de 2024 con el área correcta, Iztacalco desciende del cuarto al octavo lugar y Tlalpan asciende del decimosexto al decimocuarto.</p>
 
     <!-- ─────────────────────────────────────── -->
     <h2 class="section" id="conjunto-de-datos">Conjunto de datos resultante</h2>
@@ -337,7 +554,7 @@
     <p>Este conjunto de datos $NTL_{i,j}$ sirve como insumo para la estimación de la elasticidad entre luminosidad nocturna y PIB, siguiendo el marco estadístico propuesto por Henderson <em>et al.</em> [1], donde se relaciona el crecimiento en luces con el crecimiento en ingresos reales mediante:</p>
 
     <div class="math-block">
-      $$\log(PIB_{j,t}) = \hat{\alpha} + \hat{\beta}\,\log(NTL_{j,t}) + \epsilon_{j,t} \tag{10}$$
+      $$\log(PIB_{j,t}) = \hat{\alpha} + \hat{\beta}\,\log(NTL_{j,t}) + \epsilon_{j,t} \tag{16}$$
     </div>
 
     <p>donde $\hat{\beta}$ representa la elasticidad entre la luminosidad nocturna productiva y el PIB municipal, y $\epsilon_{j,t}$ captura tanto el error de medición del satélite como la variabilidad no explicada por la NTL.</p>
