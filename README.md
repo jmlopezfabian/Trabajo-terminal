@@ -5,10 +5,19 @@ Incluye una **API asíncrona con FastAPI** para lanzar jobs de procesamiento en 
 
 ### Componentes principales
 
-- `satellite_sync/`: implementación **síncrona** del pipeline de procesamiento.
-- `satellite_async/`: implementación **asíncrona**, utilizada por la API.
+El paquete `vnp46a1/` está dividido por responsabilidad, no por modelo de concurrencia:
+
+- `vnp46a1/core/`: configuración, modelos, utilidades y descargas.
+- `vnp46a1/geometria/`: polígono municipal → cobertura por píxel. Corre **una vez por
+  municipio**; su resultado es estático mientras no cambie la delimitación oficial.
+- `vnp46a1/radianza/`: cobertura → métricas de luminosidad. Corre **todos los días**
+  sobre cada imagen, descargando en paralelo y agrupando por cuadrante.
 - `api/`: aplicación FastAPI que expone el procesamiento como servicio HTTP.
-- `Data/`: datos auxiliares (coordenadas de municipios, límites geográficos).
+- `vnp46a1_data/`: datos auxiliares (coordenadas de municipios, límites geográficos).
+
+`geometria` produce lo que `radianza` consume. La distinción entre síncrono y asíncrono
+vive únicamente en `core/downloader.py`, donde las funciones asíncronas llevan el sufijo
+`_async`.
 
 Se utilizan **Pydantic v2** y modelos como `MedicionResultado` para validar y serializar los resultados.
 
@@ -96,7 +105,7 @@ La documentación interactiva y la interfaz web estarán en:
         {
           "Fecha": "2024-01-01",
           "Municipio": "iztapalapa",
-          "Cantidad_de_pixeles": 100,
+          "Cantidad_de_pixeles": 114.39,
           "Suma_de_radianza": 1000.0,
           "Media_de_radianza": 10.0,
           "Desviacion_estandar_de_radianza": 1.0,
@@ -121,11 +130,22 @@ La documentación interactiva y la interfaz web estarán en:
 
 1. Para cada fecha y municipio:
    - Se descarga el archivo HDF5 VNP46A1 correspondiente (NASA).
-   - Se recorta la imagen usando las coordenadas de píxeles del municipio.
-2. Se calculan métricas de radianza (media, suma, percentiles, máximo, mínimo, etc.) y se modelan con `MedicionResultado`.
+   - Se recorta la imagen usando la tabla de cobertura del municipio.
+2. Se calculan métricas de radianza **ponderando cada píxel por la fracción que el
+   municipio cubre de él**, y se modelan con `MedicionResultado`.
 3. Los resultados se consolidan en un `DataFrame` de `pandas` y se **guardan como Parquet** para análisis posterior.
 
-La API usa la implementación **asíncrona** (`satellite_async`) para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
+`Cantidad_de_pixeles` es el **área del municipio en píxeles**, no un conteo: es la suma
+de las coberturas, así que puede ser fraccionaria. Contar píxeles enteros obligaba a
+aceptar o descartar cada celda de frontera, y como esas celdas están cubiertas
+aproximadamente por la mitad, descartarlas subestimaba el área entre 7% y 31% según la
+forma del municipio.
+
+La tabla de cobertura (`vnp46a1_data/municipios_coordenadas_pixeles.json`) se regenera
+con `python scripts/generar_coordenadas_pixeles.py`; solo hace falta si cambian los
+polígonos municipales.
+
+La API usa `vnp46a1.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
 
 ---
 

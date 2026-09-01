@@ -28,6 +28,22 @@ def temp_path(filename: str) -> Path:
     return TEMP_DIR / filename
 
 
+# Where the Parquet results are written.
+#
+# Esto era "../data", que además de depender del cwd escribía en el directorio
+# padre: lanzar el proceso desde una subcarpeta dejaba los resultados fuera del
+# proyecto. A diferencia de TEMP_DIR, el valor por omisión no es el temporal del
+# sistema: son resultados, no archivos de paso, y perderlos ahí sería peor.
+# Usa VNP46A1_DATA_DIR para fijarlo.
+DATA_DIR = Path(os.getenv("VNP46A1_DATA_DIR") or Path.cwd() / "data").expanduser().resolve()
+
+
+def data_path(filename: str) -> Path:
+    """Absolute path for a result file, creating DATA_DIR on first use."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR / filename
+
+
 def find_image_path(hdf_file) -> str:
     """
     Encuentra la ruta al dataset de radianza. Colección 5200 puede usar
@@ -66,6 +82,17 @@ def find_image_path(hdf_file) -> str:
 
     return IMAGE_PATH
 _DATA_ROOT = resources.files("vnp46a1_data")
+
+# Polígonos municipales: entrada de vnp46a1.geometria, que los convierte en
+# coberturas por píxel.
+RUTA_MUNICIPIOS = str(_DATA_ROOT.joinpath("limite-de-las-alcaldias.json"))
+
+# Coberturas ya calculadas: entrada de vnp46a1.radianza, que las aplica a cada
+# imagen diaria sin recalcular geometría.
 PIXELES_MUNICIPIOS = str(_DATA_ROOT.joinpath("municipios_coordenadas_pixeles.json"))
+
 TOKEN = os.getenv("NASA_API_TOKEN")
 HEADERS = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
+
+# Tamaño de bloque para la descarga bloqueante
+CHUNK_SIZE = 8192

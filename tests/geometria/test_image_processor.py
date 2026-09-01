@@ -1,8 +1,8 @@
-"""Unit tests for satellite_sync image_processor (pure numpy/geometry)."""
+"""Unit tests for vnp46a1 image_processor (pure numpy/geometry)."""
 import numpy as np
 import pytest
 
-from satellite_sync.image_processor import (
+from vnp46a1.geometria.image_processor import (
     aumentar_imagen,
     recortar_imagen,
     completar_bordes,

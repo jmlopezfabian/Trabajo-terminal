@@ -4,11 +4,11 @@ import os
 import glob
 from typing import Callable
 
-from .config import PIXELES_MUNICIPIOS, TEMP_DIR, temp_path
-from .utils import normalize_municipio, parse_date, load_coord_data
-from .downloader import find_file, download_file
-from .processing import process_image
-from .models import MedicionResultado
+from ..core.config import PIXELES_MUNICIPIOS, TEMP_DIR, data_path, temp_path
+from ..core.utils import normalize_municipio, parse_date, load_coord_data
+from ..core.downloader import find_file_async, download_file_async
+from .extraccion import process_image
+from ..core.models import MedicionResultado
 
 def chunk_list(lst, chunk_size):
     """Divide una lista en chunks del tamaño especificado"""
@@ -34,14 +34,11 @@ def cleanup_temp_files():
 def save_progress(df, municipio, chunk_number=None):
     """Guarda el progreso actual en Parquet"""
     try:
-        # Crear directorio si no existe
-        os.makedirs("../data", exist_ok=True)
-        
         # Nombre del archivo con información del chunk
         if chunk_number is not None:
-            filename = f"../data/{municipio}_progress_chunk_{chunk_number}.parquet"
+            filename = str(data_path(f"{municipio}_progress_chunk_{chunk_number}.parquet"))
         else:
-            filename = f"../data/{municipio}_progress.parquet"
+            filename = str(data_path(f"{municipio}_progress.parquet"))
         
         # Guardar Parquet
         df.to_parquet(filename, index=False)
@@ -123,14 +120,14 @@ class SatelliteImagesAsync:
         
         # Buscar y descargar el archivo
         print(f"🔍 Buscando archivo H5 para: {year}-{day} ({cuadrante})")
-        h5_url = await find_file(session, year, day, cuadrante)
+        h5_url = await find_file_async(session, year, day, cuadrante)
         if not h5_url:
             print(f"❌ No se encontró archivo H5 para: {year}-{day} ({cuadrante})")
             return None
             
         save_path = str(temp_path(f"{date_obj}_{cuadrante}.h5"))
         print(f"📥 Descargando: {h5_url} -> {save_path}")
-        downloaded_path = await download_file(session, h5_url, save_path)
+        downloaded_path = await download_file_async(session, h5_url, save_path)
         
         if downloaded_path:
             self.cache_h5_files[cache_key] = downloaded_path
@@ -155,7 +152,7 @@ class SatelliteImagesAsync:
                 municipios_por_cuadrante[cuadrante] = []
             municipios_por_cuadrante[cuadrante].append({
                 'nombre': municipio,
-                'coordenadas_pixeles': coord_data.coordenadas_pixeles
+                'pesos': coord_data.pesos
             })
         
         # Procesar cada cuadrante
@@ -170,7 +167,7 @@ class SatelliteImagesAsync:
                 try:
                     datos = process_image(
                         h5_path, 
-                        municipio_data['coordenadas_pixeles'], 
+                        municipio_data['pesos'],
                         date_obj, 
                         municipio_data['nombre'],
                         delete_file=False  # No eliminar el archivo hasta procesar todos los municipios

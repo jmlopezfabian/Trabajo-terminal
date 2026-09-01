@@ -5,8 +5,9 @@ import os
 from datetime import date
 from typing import Any
 
-from .config import IMAGE_PATH, find_image_path
-from .models import MedicionResultado
+from ..core.config import IMAGE_PATH, find_image_path
+from ..core.metricas import metricas_ponderadas
+from ..core.models import MedicionResultado
 
 
 def _float_to_json_safe(value: float) -> float | None:
@@ -16,29 +17,63 @@ def _float_to_json_safe(value: float) -> float | None:
     return None
 
 
+def _normalizar_pesos(entradas) -> list[tuple[int, int, float]]:
+    """
+    Acepta tripletas (x, y, w) y también el formato anterior (x, y).
+
+    Con el formato anterior no hay más remedio que asumir cobertura 1.0, que es
+    justo lo que sesgaba las métricas: cada píxel de frontera cuenta entero
+    aunque el municipio solo cubra la mitad. Se avisa en vez de fallar para que
+    una tabla sin regenerar no rompa el procesamiento.
+    """
+    normalizados = []
+    incompletas = 0
+    for entrada in entradas:
+        if len(entrada) == 3:
+            x, y, w = entrada
+        else:
+            (x, y), w = entrada, 1.0
+            incompletas += 1
+        normalizados.append((int(x), int(y), float(w)))
+
+    if incompletas:
+        print(
+            f"AVISO: {incompletas} píxeles sin cobertura; se asume 1.0. Las métricas "
+            f"quedarán sesgadas por la frontera. Regenera la tabla con "
+            f"scripts/generar_coordenadas_pixeles.py"
+        )
+    return normalizados
+
+
 def _crop_radiance_and_mask(
-    image_matrix: np.ndarray, coordenadas_validas: list[tuple[int, int]]
+    image_matrix: np.ndarray, pesos_validos: list[tuple[int, int, float]]
 ) -> dict[str, Any]:
     """
-    Recorta la matriz de radianza al bounding box de las coordenadas válidas y
-    construye la máscara binaria del municipio sobre ese recorte.
+    Recorta la matriz de radianza al bounding box del municipio y construye,
+    sobre ese recorte, la máscara binaria y la matriz de cobertura.
+
+    La máscara marca los píxeles que el municipio toca; la cobertura dice qué
+    fracción de cada uno le corresponde, que es lo que pondera las métricas.
     """
-    min_x = min(x for x, _ in coordenadas_validas)
-    max_x = max(x for x, _ in coordenadas_validas)
-    min_y = min(y for _, y in coordenadas_validas)
-    max_y = max(y for _, y in coordenadas_validas)
+    min_x = min(x for x, _, _ in pesos_validos)
+    max_x = max(x for x, _, _ in pesos_validos)
+    min_y = min(y for _, y, _ in pesos_validos)
+    max_y = max(y for _, y, _ in pesos_validos)
 
     submatrix = image_matrix[min_y : max_y + 1, min_x : max_x + 1]
     rows, cols = submatrix.shape
 
     mask = np.zeros((rows, cols), dtype=int)
-    for x, y in coordenadas_validas:
+    coverage = np.zeros((rows, cols), dtype=float)
+    for x, y, w in pesos_validos:
         mask[y - min_y, x - min_x] = 1
+        coverage[y - min_y, x - min_x] = w
 
     radiance_list: list[list[float | None]] = [
         [_float_to_json_safe(float(v)) for v in row] for row in submatrix
     ]
     mask_list: list[list[int]] = [list(row) for row in mask]
+    coverage_list: list[list[float]] = [[float(v) for v in row] for row in coverage]
 
     return {
         "bbox": {"min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y},
@@ -46,12 +81,13 @@ def _crop_radiance_and_mask(
         "cols": cols,
         "radiance_matrix": radiance_list,
         "municipality_mask": mask_list,
+        "municipality_coverage": coverage_list,
     }
 
 
 def extract_radiance_matrix(
     downloaded_path: str,
-    coordenadas_pixeles: list[tuple[int, int]],
+    pesos: list[tuple[int, int, float]],
     date_obj: date,
     municipio: str,
 ) -> dict[str, Any] | None:
@@ -75,19 +111,19 @@ def extract_radiance_matrix(
             image_matrix = hdf_file[radiance_path][()]
 
             # Filtrar coordenadas válidas dentro de la imagen
-            coordenadas_validas = [
-                (x, y)
-                for x, y in coordenadas_pixeles
+            pesos_validos = [
+                (x, y, w)
+                for x, y, w in _normalizar_pesos(pesos)
                 if 0 <= y < image_matrix.shape[0] and 0 <= x < image_matrix.shape[1]
             ]
 
-            if len(coordenadas_validas) == 0:
+            if len(pesos_validos) == 0:
                 print(
                     f"No se encontraron coordenadas válidas para {municipio} en {date_obj}"
                 )
                 return None
 
-            crop = _crop_radiance_and_mask(image_matrix, coordenadas_validas)
+            crop = _crop_radiance_and_mask(image_matrix, pesos_validos)
 
             return {
                 "municipio": municipio,
@@ -99,7 +135,14 @@ def extract_radiance_matrix(
         return None
 
 
-def process_image(downloaded_path, coordendas_pixeles, date_obj, municipio, delete_file=True):
+def process_image(downloaded_path, pesos, date_obj, municipio, delete_file=True):
+    """
+    Calcula las métricas del municipio ponderando cada píxel por su cobertura.
+
+    `pesos` son tripletas (x, y, w) con w en (0, 1]. Contar los píxeles enteros
+    subestimaba el área entre 7% y 31% según la forma del municipio, porque
+    descartaba una franja de frontera que está cubierta a medias.
+    """
     if not os.path.exists(downloaded_path):
         print(f"Archivo no encontrado: {downloaded_path}")
         return None
@@ -117,48 +160,42 @@ def process_image(downloaded_path, coordendas_pixeles, date_obj, municipio, dele
             copia = np.clip(image_matrix.copy(), 0, np.percentile(image_matrix, 99))
 
             # Filtrar coordenadas válidas
-            coordenadas_validas = [
-                (x, y) for x, y in coordendas_pixeles
+            pesos_validos = [
+                (x, y, w) for x, y, w in _normalizar_pesos(pesos)
                 if 0 <= y < image_matrix.shape[0] and 0 <= x < image_matrix.shape[1]
             ]
-            
+
             # Verificar que tenemos coordenadas válidas
-            if len(coordenadas_validas) == 0:
+            if len(pesos_validos) == 0:
                 print(f"⚠️ No se encontraron coordenadas válidas para {municipio} en {date_obj}")
-                print(f"   - Total coordenadas: {len(coordendas_pixeles)}")
+                print(f"   - Total coordenadas: {len(pesos)}")
                 print(f"   - Dimensiones imagen: {image_matrix.shape}")
                 print(f"   - Rango X: [0, {image_matrix.shape[1]-1}]")
                 print(f"   - Rango Y: [0, {image_matrix.shape[0]-1}]")
                 return None
-            
-            # Extraer píxeles válidos
-            pixeles_imagen = [image_matrix[y, x] for x, y in coordenadas_validas]
-            
-            # Informar sobre coordenadas filtradas
-            if len(coordenadas_validas) < len(coordendas_pixeles):
-                print(f"ℹ️ Filtradas {len(coordendas_pixeles) - len(coordenadas_validas)} coordenadas inválidas para {municipio}")
-                print(f"   - Coordenadas válidas: {len(coordenadas_validas)}")
-                print(f"   - Coordenadas totales: {len(coordendas_pixeles)}")
 
-            crop = _crop_radiance_and_mask(image_matrix, coordenadas_validas)
+            # Informar sobre coordenadas filtradas
+            if len(pesos_validos) < len(pesos):
+                print(f"ℹ️ Filtradas {len(pesos) - len(pesos_validos)} coordenadas inválidas para {municipio}")
+                print(f"   - Coordenadas válidas: {len(pesos_validos)}")
+                print(f"   - Coordenadas totales: {len(pesos)}")
+
+            valores = np.array([float(image_matrix[y, x]) for x, y, _ in pesos_validos])
+            cobertura = np.array([w for _, _, w in pesos_validos], dtype=float)
+
+            crop = _crop_radiance_and_mask(image_matrix, pesos_validos)
+            metricas = metricas_ponderadas(valores, cobertura)
 
             datos = MedicionResultado(
                 Fecha=date_obj,
                 Municipio=municipio,
-                Cantidad_de_pixeles=len(pixeles_imagen),
-                Suma_de_radianza=float(np.sum(pixeles_imagen)),
-                Media_de_radianza=float(np.mean(pixeles_imagen)),
-                Desviacion_estandar_de_radianza=float(np.std(pixeles_imagen)),
-                Maximo_de_radianza=float(np.max(pixeles_imagen)),
-                Minimo_de_radianza=float(np.min(pixeles_imagen)),
-                Percentil_25_de_radianza=float(np.percentile(pixeles_imagen, 25)),
-                Percentil_50_de_radianza=float(np.percentile(pixeles_imagen, 50)),
-                Percentil_75_de_radianza=float(np.percentile(pixeles_imagen, 75)),
+                **metricas,
                 Bbox=crop["bbox"],
                 Filas=crop["rows"],
                 Columnas=crop["cols"],
                 Matriz_de_radianza=crop["radiance_matrix"],
                 Mascara_municipio=crop["municipality_mask"],
+                Cobertura_municipio=crop["municipality_coverage"],
             )
         
         return datos

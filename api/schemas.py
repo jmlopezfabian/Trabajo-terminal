@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from satellite_async.models import MedicionResultado
+from vnp46a1.core.models import MedicionResultado
 
 
 class JobRequest(BaseModel):
@@ -75,6 +75,9 @@ class MatrizResult(BaseModel):
     )
     municipality_mask: list[list[int]] = Field(
         ..., description="Binary mask: 1=municipality pixel, 0=otherwise"
+    )
+    municipality_coverage: list[list[float]] = Field(
+        ..., description="Fraction of each pixel inside the municipality, in [0, 1]"
     )
 
 

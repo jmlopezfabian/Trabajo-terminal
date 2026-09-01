@@ -232,6 +232,7 @@ class TestGetMatrizResult:
                 "cols": 11,
                 "radiance_matrix": [[0.1] * 11 for _ in range(11)],
                 "municipality_mask": [[1 if i == j else 0 for j in range(11)] for i in range(11)],
+                "municipality_coverage": [[0.5 if i == j else 0.0 for j in range(11)] for i in range(11)],
             }
         ]
         resp = client.get("/matriz/matriz-done/resultado")
@@ -244,3 +245,5 @@ class TestGetMatrizResult:
         assert data["cols"] == 11
         assert len(data["radiance_matrix"]) == 11
         assert len(data["municipality_mask"]) == 11
+        # La cobertura fraccional debe llegar al cliente, no quedarse en el modelo
+        assert data["municipality_coverage"][0][0] == 0.5

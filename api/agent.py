@@ -11,8 +11,8 @@ from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
-from satellite_async.config import PIXELES_MUNICIPIOS
-from satellite_async.utils import normalize_municipio
+from vnp46a1.core.config import PIXELES_MUNICIPIOS
+from vnp46a1.core.utils import normalize_municipio
 
 from .job_manager import job_store, run_job, run_matriz_job
 
@@ -189,6 +189,7 @@ def _create_agent() -> Agent:
             "cols": int(result.get("cols", 0)),
             "radiance_matrix": _to_json_serializable(result.get("radiance_matrix", [])),
             "municipality_mask": _to_json_serializable(result.get("municipality_mask", [])),
+            "municipality_coverage": _to_json_serializable(result.get("municipality_coverage", [])),
         }
         if hasattr(data["fecha"], "isoformat"):
             data["fecha"] = data["fecha"].isoformat()

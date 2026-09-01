@@ -80,7 +80,7 @@
     <!-- Abstract -->
     <div class="abstract">
       <strong>Resumen</strong>
-      Se presenta la metodología computacional desarrollada para extraer, georreferenciar y agregar datos de luminosidad nocturna del producto satelital VNP46A1 (Black Marble) de la NASA a nivel de municipio. El proceso transforma imágenes diarias en formato HDF5, descargadas del servidor LAADS DAAC, en un conjunto de estadísticas descriptivas de radianza por municipio y fecha. La metodología comprende la transformación de coordenadas geográficas al sistema de referencia de la imagen, el cierre de bordes del polígono municipal mediante interpolación lineal, la identificación de píxeles interiores mediante búsqueda en amplitud, y la detección de regiones desconectadas mediante una búsqueda inversa desde los bordes de la imagen. El factor de escala que refina la delimitación se aplica sobre la máscara del municipio y no sobre la radianza, lo que permite expresar las métricas como agregados ponderados por el área que cada píxel aporta y las vuelve invariantes a dicho factor. Se valida la delimitación contra la intersección geométrica exacta del polígono con la retícula, cuantificando el sesgo del tratamiento de la frontera y estableciendo un criterio analítico para elegir el factor. Se describen también las optimizaciones implementadas —precomputo de coordenadas y procesamiento asíncrono por lotes— que redujeron el tiempo de procesamiento en un factor significativo.
+      Se presenta la metodología computacional desarrollada para extraer, georreferenciar y agregar datos de luminosidad nocturna del producto satelital VNP46A1 (Black Marble) de la NASA a nivel de municipio. El proceso transforma imágenes diarias en formato HDF5, descargadas del servidor LAADS DAAC, en un conjunto de estadísticas descriptivas de radianza por municipio y fecha. La metodología comprende la transformación de coordenadas geográficas al sistema de referencia de la imagen, el cierre de bordes del polígono municipal mediante interpolación lineal, la identificación de píxeles interiores mediante búsqueda en amplitud, y la detección de regiones desconectadas mediante una búsqueda inversa desde los bordes de la imagen. El factor de escala que refina la delimitación se aplica sobre la máscara del municipio y no sobre la radianza, lo que permite expresar las métricas como agregados ponderados por el área que cada píxel aporta y las vuelve invariantes a dicho factor. Se valida la delimitación contra la intersección geométrica exacta del polígono con la retícula, cuantificando el sesgo del tratamiento de la frontera y estableciendo un criterio analítico para elegir el factor. Se describen también las optimizaciones implementadas —precomputo de la cobertura y procesamiento asíncrono por lotes— que redujeron el tiempo de procesamiento en un factor significativo.
     </div>
 
     <!-- ─────────────────────────────────────── -->
@@ -331,11 +331,13 @@
 
     <p>La versión inicial del proceso ejecutaba todas las etapas de manera estrictamente secuencial: para cada combinación de municipio y fecha se descargaba el archivo, se transformaban las coordenadas, se identificaban los píxeles y se calculaban las estadísticas, antes de pasar a la siguiente fecha. Para 365 días de un único municipio, este esquema requería aproximadamente 60 minutos de ejecución. Se desarrollaron tres optimizaciones que redujeron este tiempo de manera significativa.</p>
 
-    <h3 class="subsection" id="precomputo">Precomputo y almacenamiento de coordenadas de píxeles</h3>
+    <h3 class="subsection" id="precomputo">Precomputo y almacenamiento de la cobertura</h3>
 
     <p>La identificación de los píxeles que pertenecen a un municipio —etapas 3 a 7 de la metodología— produce siempre el mismo resultado, puesto que la delimitación geográfica de un municipio dentro de un cuadrante satelital es estática. Recalcular estas coordenadas en cada ejecución diaria resultaba redundante.</p>
 
-    <p>Para eliminar este costo, se desarrolló un proceso independiente que ejecuta el mapeo geográfico una única vez por municipio: obtiene el conjunto completo de coordenadas de píxeles interiores y almacena el resultado en un archivo de consulta estructurado. En ejecuciones posteriores, el proceso principal omite completamente las etapas de transformación geométrica y lee directamente las coordenadas desde dicho archivo, reduciendo cada iteración diaria a la descarga del archivo HDF5, la extracción de los valores de radianza en las coordenadas prealmacenadas y el cómputo de estadísticas.</p>
+    <p>Para eliminar este costo, se desarrolló un proceso independiente que ejecuta el mapeo geográfico una única vez por municipio: calcula la cobertura $w_p$ de cada píxel según la ecuación (10) y almacena el resultado en un archivo de consulta estructurado. En ejecuciones posteriores, el proceso principal omite completamente las etapas de transformación geométrica, reduciendo cada iteración diaria a la descarga del archivo HDF5, la lectura de los valores de radianza en las posiciones prealmacenadas y la agregación ponderada de las ecuaciones (11) y (12).</p>
+
+    <p>Lo que se almacena es una tripleta $(x, y, w_p)$ por píxel, no solo la posición. Guardar únicamente las coordenadas obliga a decidir cada celda de frontera entera y, por lo tanto, hace imposible expresar el resultado del refinamiento descrito en la sección 3: el formato del archivo intermedio determina qué precisión puede alcanzar la etapa que lo consume.</p>
 
     <h3 class="subsection" id="asincrono">Procesamiento asíncrono por lotes</h3>
 
@@ -539,7 +541,7 @@
         <tr><td>Cuadrante</td><td>Cuadrante de origen según la cuadrícula de Black Marble ($hXXvYY$)</td></tr>
         <tr><td>Municipio</td><td>Nombre del municipio</td></tr>
         <tr><td>Fecha</td><td>Fecha de toma de la imagen (yyyy-mm-dd)</td></tr>
-        <tr><td>Cantidad de píxeles</td><td>Número de píxeles que conforman el municipio en la imagen</td></tr>
+        <tr><td>Área del municipio</td><td>Superficie en píxeles de la retícula, suma de las coberturas $w_p$. Es fraccionaria: no es un conteo</td></tr>
         <tr><td>Suma de radianza</td><td>Suma total de los valores de luminosidad del municipio</td></tr>
         <tr><td>Media de radianza</td><td>Promedio de los valores de luminosidad</td></tr>
         <tr><td>Desviación estándar</td><td>Dispersión de los valores respecto a la media</td></tr>
