@@ -51,37 +51,49 @@ def recortar_imagen(image_matrix: np.ndarray, coordenadas_municipio: np.ndarray,
 def completar_bordes(nuevos_x_pixels: np.ndarray, nuevos_y_pixels: np.ndarray) -> List[Tuple[int, int]]:
     """
     Completa los bordes del polígono interpolando puntos entre vértices distantes.
-    
+
+    La densidad de muestreo se deriva de la longitud de cada arista, no de una
+    constante: una arista de d píxeles se muestrea con 2d+1 puntos, de modo que
+    nunca quedan huecos por los que el relleno pueda fugarse, sea cual sea el
+    factor de escala. La interpolación es paramétrica en t en vez de despejar
+    y en función de x, así que las aristas verticales (dx = 0) no producen
+    pendientes infinitas.
+
     Args:
-        nuevos_x_pixels: Coordenadas X de los píxeles
-        nuevos_y_pixels: Coordenadas Y de los píxeles
-        
+        nuevos_x_pixels: Coordenadas X de los vértices, en la malla de destino
+        nuevos_y_pixels: Coordenadas Y de los vértices, en la malla de destino
+
     Returns:
-        Lista de coordenadas completas del borde
+        Lista de coordenadas enteras que forman un borde cerrado sin huecos
     """
-    coordenadas_bordes = list()
-    
+    coordenadas_bordes = []
+    vistos = set()  # membresía en O(1); con una lista el trazado es cuadrático
+
+    def agregar(x: float, y: float) -> None:
+        punto = (int(x), int(y))
+        if punto not in vistos:
+            vistos.add(punto)
+            coordenadas_bordes.append(punto)
+
     for i in range(len(nuevos_x_pixels) - 1):
-        if not (nuevos_x_pixels[i], nuevos_y_pixels[i]) in coordenadas_bordes:
-            coordenadas_bordes.append((int(nuevos_x_pixels[i]), int(nuevos_y_pixels[i])))
-        
-        distancia = distancia_puntos((nuevos_x_pixels[i], nuevos_y_pixels[i]), 
-                                   (nuevos_x_pixels[i+1], nuevos_y_pixels[i+1]))
-        
+        x0, y0 = nuevos_x_pixels[i], nuevos_y_pixels[i]
+        x1, y1 = nuevos_x_pixels[i+1], nuevos_y_pixels[i+1]
+        agregar(x0, y0)
+
+        distancia = distancia_puntos((x0, y0), (x1, y1))
         if distancia > 1:
-            pendiente = (nuevos_y_pixels[i+1] - nuevos_y_pixels[i]) / (nuevos_x_pixels[i+1] - nuevos_x_pixels[i])
-            recta = lambda x: pendiente * (x - nuevos_x_pixels[i]) + nuevos_y_pixels[i]
-            x = np.linspace(nuevos_x_pixels[i], nuevos_x_pixels[i+1], 100)
-            y = recta(x)
-            
-            for j in range(len(x)):
-                if not (nuevos_x_pixels[i], nuevos_y_pixels[i]) in coordenadas_bordes:
-                    coordenadas_bordes.append((int(x[j]), int(y[j])))
+            # Dos muestras por píxel de arista: suficiente para que dos puntos
+            # consecutivos caigan en celdas iguales o adyacentes.
+            n_puntos = int(np.ceil(distancia)) * 2 + 1
+            t = np.linspace(0.0, 1.0, n_puntos)
+            xs = x0 + (x1 - x0) * t
+            ys = y0 + (y1 - y0) * t
+            for x, y in zip(xs, ys):
+                agregar(x, y)
 
-    if not (nuevos_x_pixels[-1], nuevos_y_pixels[-1]) in coordenadas_bordes:
-        coordenadas_bordes.append((int(nuevos_x_pixels[-1]), int(nuevos_y_pixels[-1])))
+    agregar(nuevos_x_pixels[-1], nuevos_y_pixels[-1])
 
-    return list(coordenadas_bordes)
+    return coordenadas_bordes
 
 def get_pixeles(imagen: np.ndarray, bordes: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
     """
