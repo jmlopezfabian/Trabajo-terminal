@@ -17,6 +17,7 @@ from ntl.core.utils import (
     load_coord_data,
     normalize_municipio,
 )
+from ntl.geometria.cobertura import cobertura_exacta, poligono_en_pixeles
 from ntl.geometria.image_processor import pesos_municipio, recortar
 
 FORMA_CUADRANTE = (2400, 2400)
@@ -71,11 +72,30 @@ class TestCoherenciaConLaGeometria:
         datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
 
         coordenadas = extraer_coordenadas(nombre)
-        vacia = np.zeros(FORMA_CUADRANTE, dtype=np.float32)
-        recorte, nx, ny = recortar(vacia, coordenadas, esquina_superior_izquierda(datos.cuadrante), 32)
-        area_recalculada = float(pesos_municipio(recorte.shape, nx, ny, 32).sum())
+        poligono = poligono_en_pixeles(
+            coordenadas, esquina_superior_izquierda(datos.cuadrante), FORMA_CUADRANTE
+        )
+        area_recalculada = float(cobertura_exacta(poligono)[0].sum())
 
-        assert datos.area == pytest.approx(area_recalculada, rel=1e-4)
+        assert datos.area == pytest.approx(area_recalculada, rel=1e-6)
+
+    @pytest.mark.parametrize("nombre", ["Azcapotzalco", "Iztacalco"])
+    def test_la_aproximacion_por_subdivision_converge_a_la_tabla(self, nombre):
+        """`pesos_municipio` a k=32 debe acercarse a la cobertura exacta.
+
+        Comprueba que la aproximación por subdivisión y el método exacto no se
+        hayan separado: `pesos_municipio` ya no genera la tabla, pero sigue
+        disponible y conviene que siga siendo correcto.
+        """
+        datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
+        coordenadas = extraer_coordenadas(nombre)
+        vacia = np.zeros(FORMA_CUADRANTE, dtype=np.float32)
+        recorte, nx, ny = recortar(
+            vacia, coordenadas, esquina_superior_izquierda(datos.cuadrante), 32
+        )
+        aproximada = float(pesos_municipio(recorte.shape, nx, ny, 32).sum())
+
+        assert aproximada == pytest.approx(datos.area, rel=1e-3)
 
     def test_el_area_supera_el_conteo_de_pixeles_interiores(self):
         """

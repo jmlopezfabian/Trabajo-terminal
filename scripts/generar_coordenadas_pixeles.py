@@ -7,10 +7,11 @@ cae dentro de su límite geográfico. El pipeline de radianza lo lee en cada
 ejecución diaria para saltarse por completo la etapa de transformación
 geométrica.
 
-Guarda tripletas (x, y, w) con w en (0, 1]. La versión anterior guardaba solo
-coordenadas, lo que obligaba a decidir cada píxel de frontera entero: como esas
-celdas están cubiertas aproximadamente por la mitad, descartarlas subestimaba el
-área del municipio entre 7% y 31% según su forma.
+Guarda tripletas (x, y, w) con w en (0, 1], calculadas por intersección
+geométrica exacta. La versión anterior guardaba solo coordenadas, lo que
+obligaba a decidir cada píxel de frontera entero: como esas celdas están
+cubiertas aproximadamente por la mitad, descartarlas subestimaba el área del
+municipio entre 7% y 31% según su forma.
 
 La geometría del recorte depende únicamente del tamaño de la retícula del
 producto y de la esquina superior izquierda del cuadrante, ambos derivables del
@@ -18,7 +19,7 @@ identificador del cuadrante (hHHvVV). Por eso no hace falta descargar ningún
 HDF5 para regenerar el archivo.
 
 Uso:
-    python scripts/generar_coordenadas_pixeles.py [--salida ruta.json] [--factor N] [--dry-run]
+    python scripts/generar_coordenadas_pixeles.py [--salida ruta.json] [--dry-run]
 """
 import argparse
 import json
@@ -30,7 +31,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ntl.core.config import RUTA_MUNICIPIOS
-from ntl.geometria.image_processor import pesos_municipio, recortar
+from ntl.geometria.cobertura import cobertura_exacta, poligono_en_pixeles
 from ntl.core.utils import (
     cuadrante_de_coordenadas,
     esquina_superior_izquierda,
@@ -48,47 +49,37 @@ SALIDA_POR_DEFECTO = os.path.join(
 )
 
 
-def cobertura_de_municipio(nombre: str, cuadrante: str, factor: int) -> list[list]:
+def cobertura_de_municipio(nombre: str, cuadrante: str) -> list[list]:
     """
     Devuelve las tripletas (x, y, w) del municipio en la retícula del cuadrante.
 
-    Se recorta al bounding box, se calcula la cobertura de cada píxel sobre una
-    malla `factor` veces más fina y se devuelven las coordenadas al sistema
-    absoluto del cuadrante sumando el desplazamiento del recorte.
+    La cobertura se calcula por intersección geométrica exacta: sin factor de
+    subdivisión y sin ningún peso que elegir para el trazo del borde. La
+    aproximación por subdivisión sigue disponible en `pesos_municipio`, pero no
+    hay motivo para usarla aquí, donde el cálculo se paga una sola vez.
     """
     coordenadas = extraer_coordenadas(nombre)
     if coordenadas is None:
         raise ValueError(f"No se encontraron coordenadas para el municipio: {nombre}")
 
     upper_left = esquina_superior_izquierda(cuadrante)
+    poligono = poligono_en_pixeles(coordenadas, upper_left, FORMA_CUADRANTE)
+    pesos, fila_0, columna_0 = cobertura_exacta(poligono)
 
-    # recortar solo usa la forma de la matriz, no sus valores
-    matriz_vacia = np.zeros(FORMA_CUADRANTE, dtype=np.float32)
-    recorte, nuevos_x, nuevos_y = recortar(matriz_vacia, coordenadas, upper_left, factor)
-    pesos = pesos_municipio(recorte.shape, nuevos_x, nuevos_y, factor)
-
-    # Mismo desplazamiento que aplica recortar al definir el área de recorte
-    resolucion_x = 10 / FORMA_CUADRANTE[1]
-    resolucion_y = 10 / FORMA_CUADRANTE[0]
-    x_pixels = (coordenadas[:, 0] - upper_left[0]) / resolucion_x
-    y_pixels = (upper_left[1] - coordenadas[:, 1]) / resolucion_y
-    desplazamiento_x = int(np.ceil(x_pixels.min())) - 1
-    desplazamiento_y = int(np.ceil(y_pixels.min())) - 1
-
+    # Una esquina del polígono puede rozar una celda y dejar una cobertura de
+    # 1e-8; al redondear queda en 0.0 y sobra, porque no aporta área ni valor.
     filas, columnas = np.nonzero(pesos)
-    return [
-        [int(x) + desplazamiento_x, int(y) + desplazamiento_y, round(float(pesos[y, x]), 6)]
+    tripletas = [
+        [int(x) + columna_0, int(y) + fila_0, round(float(pesos[y, x]), 6)]
         for y, x in zip(filas, columnas)
     ]
+    return [t for t in tripletas if t[2] > 0]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--salida", default=SALIDA_POR_DEFECTO,
                         help="Ruta del JSON a escribir (por defecto, el del paquete)")
-    parser.add_argument("--factor", type=int, default=32,
-                        help="Subdivisiones por lado al medir la cobertura (por defecto 32). "
-                             "El costo es de milisegundos y solo se paga una vez.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Solo compara contra el archivo existente, sin escribir")
     args = parser.parse_args()
@@ -120,7 +111,7 @@ def main() -> int:
             print(f"  AVISO: {nombre} estaba en {heredado} y sus coordenadas "
                   f"caen en {cuadrante}")
 
-        pesos = cobertura_de_municipio(nombre, cuadrante, args.factor)
+        pesos = cobertura_de_municipio(nombre, cuadrante)
         resultado[clave] = {
             "nombre": clave,
             "cuadrante": cuadrante,
@@ -139,11 +130,21 @@ def main() -> int:
         print(f"{nombre:26s} {cuadrante}  area {area:8.2f} px  "
               f"({frontera:4d} de frontera)   antes {area_previa:8.2f}  {cambio:+6.1f}%")
 
-        # El área es el invariante, no la identidad de cada píxel: el conjunto
-        # nuevo suma la frontera, así que no puede encoger.
-        if area_previa and area < area_previa:
-            print(f"  ERROR: el área de {nombre} baja de {area_previa:.2f} a {area:.2f}")
-            return 1
+        # Qué se considera un cambio aceptable depende de con qué se compara.
+        # Frente a una tabla de coordenadas, el área solo puede crecer: la nueva
+        # incluye la frontera. Frente a una tabla que ya trae coberturas, debe
+        # coincidir salvo por el error de la aproximación anterior, que a k=32
+        # era de milésimas.
+        era_cobertura = bool(entradas_previas) and len(entradas_previas[0]) == 3
+        if area_previa:
+            if era_cobertura:
+                if abs(area / area_previa - 1) > 0.01:
+                    print(f"  ERROR: el área de {nombre} cambia más de 1%: "
+                          f"{area_previa:.2f} -> {area:.2f}")
+                    return 1
+            elif area < area_previa:
+                print(f"  ERROR: el área de {nombre} baja de {area_previa:.2f} a {area:.2f}")
+                return 1
 
         # Un píxel puede desaparecer si el método anterior lo incluía por error.
         # El relleno viejo llegaba a marcar como interiores bolsas que el
