@@ -96,3 +96,43 @@ class TestExtractRadianceMatrix:
             "Test",
         )
         assert result is None
+
+
+class TestPonderacionPorCobertura:
+    """La cobertura fraccional debe llegar hasta las métricas."""
+
+    def test_la_cobertura_reduce_el_area_y_la_suma(self, sample_hdf5_path):
+        completos = [(1, 1, 1.0), (2, 1, 1.0), (2, 2, 1.0), (1, 2, 1.0)]
+        frontera = [(1, 1, 1.0), (2, 1, 0.5), (2, 2, 1.0), (1, 2, 0.5)]
+
+        entero = process_image(sample_hdf5_path, completos, date(2024, 1, 1),
+                               "Iztapalapa", delete_file=False)
+        medio = process_image(sample_hdf5_path, frontera, date(2024, 1, 1),
+                              "Iztapalapa", delete_file=False)
+
+        assert entero.Cantidad_de_pixeles == pytest.approx(4.0)
+        assert medio.Cantidad_de_pixeles == pytest.approx(3.0)
+        assert medio.Suma_de_radianza < entero.Suma_de_radianza
+
+    def test_area_no_es_el_numero_de_pixeles(self, sample_hdf5_path):
+        pesos = [(1, 1, 0.25), (2, 1, 0.25)]
+        r = process_image(sample_hdf5_path, pesos, date(2024, 1, 1),
+                          "Iztapalapa", delete_file=False)
+        assert len(pesos) == 2
+        assert r.Cantidad_de_pixeles == pytest.approx(0.5)
+
+    def test_expone_la_matriz_de_cobertura(self, sample_hdf5_path):
+        pesos = [(1, 1, 1.0), (2, 1, 0.5), (2, 2, 1.0), (1, 2, 0.25)]
+        r = process_image(sample_hdf5_path, pesos, date(2024, 1, 1),
+                          "Iztapalapa", delete_file=False)
+        assert r.Cobertura_municipio == [[1.0, 0.5], [0.25, 1.0]]
+        # La máscara binaria sigue marcando qué píxeles toca el municipio
+        assert r.Mascara_municipio == [[1, 1], [1, 1]]
+
+    def test_el_formato_anterior_sigue_funcionando(self, sample_hdf5_path):
+        """Una tabla sin regenerar asume cobertura 1.0 y avisa."""
+        coords = [(1, 1), (2, 1), (2, 2), (1, 2)]
+        r = process_image(sample_hdf5_path, coords, date(2024, 1, 1),
+                          "Iztapalapa", delete_file=False)
+        assert r is not None
+        assert r.Cantidad_de_pixeles == pytest.approx(4.0)

@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from typing import Tuple, List
+from ..core.metricas import metricas_ponderadas as metricas_nucleo
 from ..core.utils import distancia_puntos
 
 def aumentar_imagen(image_matrix: np.ndarray, factor_escala: int) -> np.ndarray:
@@ -181,9 +182,9 @@ def metricas_ponderadas(imagen_recortada: np.ndarray, pesos: np.ndarray) -> dict
     """
     Métricas del municipio ponderadas por el área que cubre de cada píxel.
 
-    Son invariantes al factor de escala: subir k refina los pesos, no multiplica
-    las cantidades. `Cantidad_de_pixeles` es un área en píxeles originales, no un
-    conteo de subpíxeles, así que es comparable entre corridas con distinta k.
+    Envoltura sobre `core.metricas.metricas_ponderadas` para el caso en que la
+    cobertura viene como matriz alineada con el recorte. El cálculo vive en core
+    porque `radianza` lo necesita igual, sobre las coberturas precalculadas.
 
     Args:
         imagen_recortada: Recorte en resolución original
@@ -195,32 +196,7 @@ def metricas_ponderadas(imagen_recortada: np.ndarray, pesos: np.ndarray) -> dict
     dentro = pesos > 0
     if not dentro.any():
         return None
-
-    valores = imagen_recortada[dentro].astype(np.float64)
-    w = pesos[dentro]
-
-    area = float(w.sum())
-    suma = float(np.dot(w, valores))
-    media = suma / area
-    varianza = float(np.dot(w, (valores - media) ** 2) / area)
-
-    # Percentiles ponderados: posición de cada valor en la masa acumulada de área
-    orden = np.argsort(valores)
-    valores_ord, w_ord = valores[orden], w[orden]
-    acumulada = (np.cumsum(w_ord) - 0.5 * w_ord) / area
-    p25, p50, p75 = np.interp([0.25, 0.50, 0.75], acumulada, valores_ord)
-
-    return {
-        "Cantidad_de_pixeles": area,
-        "Suma_de_radianza": suma,
-        "Media_de_radianza": media,
-        "Desviacion_estandar_de_radianza": float(np.sqrt(varianza)),
-        "Maximo_de_radianza": float(valores.max()),
-        "Minimo_de_radianza": float(valores.min()),
-        "Percentil_25_de_radianza": float(p25),
-        "Percentil_50_de_radianza": float(p50),
-        "Percentil_75_de_radianza": float(p75),
-    }
+    return metricas_nucleo(imagen_recortada[dentro], pesos[dentro])
 
 
 def get_pixeles(imagen: np.ndarray, bordes: List[Tuple[int, int]]) -> List[Tuple[int, int]]:

@@ -155,7 +155,7 @@ class SatelliteImagesAsync:
                 municipios_por_cuadrante[cuadrante] = []
             municipios_por_cuadrante[cuadrante].append({
                 'nombre': municipio,
-                'coordenadas_pixeles': coord_data.coordenadas_pixeles
+                'pesos': coord_data.pesos
             })
         
         # Procesar cada cuadrante
@@ -170,7 +170,7 @@ class SatelliteImagesAsync:
                 try:
                     datos = process_image(
                         h5_path, 
-                        municipio_data['coordenadas_pixeles'], 
+                        municipio_data['pesos'],
                         date_obj, 
                         municipio_data['nombre'],
                         delete_file=False  # No eliminar el archivo hasta procesar todos los municipios

@@ -7,26 +7,45 @@ from vnp46a1.core.models import CoordenadasPixeles, MedicionResultado
 
 
 class TestCoordenadasPixeles:
-    def test_valid_coordenadas_pixeles(self):
-        data = {
-            "cuadrante": "h08v07",
-            "coordenadas_pixeles": [(0, 0), (1, 1), (2, 2)],
-        }
-        obj = CoordenadasPixeles(**data)
+    def test_valid_pesos(self):
+        obj = CoordenadasPixeles(
+            cuadrante="h08v07", pesos=[(0, 0, 1.0), (1, 1, 0.5), (2, 2, 0.25)]
+        )
         assert obj.cuadrante == "h08v07"
         assert obj.coordenadas_pixeles == [(0, 0), (1, 1), (2, 2)]
+        assert obj.area == pytest.approx(1.75)
 
     def test_missing_cuadrante_raises(self):
         with pytest.raises(ValidationError):
-            CoordenadasPixeles(coordenadas_pixeles=[(0, 0)])
+            CoordenadasPixeles(pesos=[(0, 0, 1.0)])
 
-    def test_missing_coordenadas_pixeles_raises(self):
+    def test_missing_pesos_raises(self):
         with pytest.raises(ValidationError):
             CoordenadasPixeles(cuadrante="h08v07")
 
-    def test_empty_coordenadas_pixeles_allowed(self):
-        obj = CoordenadasPixeles(cuadrante="h09v07", coordenadas_pixeles=[])
+    def test_empty_pesos_allowed(self):
+        obj = CoordenadasPixeles(cuadrante="h09v07", pesos=[])
         assert obj.coordenadas_pixeles == []
+        assert obj.area == 0
+
+    def test_formato_anterior_sigue_cargando(self):
+        """Una tabla sin regenerar no debe romper el procesamiento.
+
+        Se asume cobertura 1.0, que reproduce el sesgo de frontera anterior.
+        """
+        obj = CoordenadasPixeles(
+            cuadrante="h08v07", coordenadas_pixeles=[(0, 0), (1, 1)]
+        )
+        assert obj.pesos == [(0, 0, 1.0), (1, 1, 1.0)]
+        assert obj.area == 2.0
+
+    def test_area_no_es_un_conteo(self):
+        """El área suma coberturas; contar píxeles sobreestima la frontera."""
+        obj = CoordenadasPixeles(
+            cuadrante="h08v07", pesos=[(0, 0, 1.0), (1, 0, 0.5), (2, 0, 0.5)]
+        )
+        assert len(obj.pesos) == 3
+        assert obj.area == pytest.approx(2.0)
 
 
 class TestMedicionResultado:
