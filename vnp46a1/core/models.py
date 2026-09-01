@@ -1,10 +1,46 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Tuple
 from datetime import date
 
 class CoordenadasPixeles(BaseModel):
+    """
+    Cobertura precalculada de un municipio sobre la retícula de un cuadrante.
+
+    Cada entrada de `pesos` es (x, y, w) con w en (0, 1]: la fracción del píxel
+    que cae dentro del municipio. Los píxeles de frontera valen menos de 1, que
+    es justo lo que un conjunto de coordenadas no podía expresar.
+    """
+
     cuadrante: str = Field(..., description="Cuadrante of the image")
-    coordenadas_pixeles: List[Tuple[int, int]] = Field(..., description="Coordenadas of the pixels")
+    pesos: List[Tuple[int, int, float]] = Field(
+        ..., description="(x, y, coverage) per pixel; coverage in (0, 1]"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _acepta_formato_anterior(cls, data):
+        """
+        Lee el formato previo, en el que solo había coordenadas.
+
+        Un archivo viejo sigue cargando, con cobertura 1.0 en cada píxel. Eso
+        reproduce el comportamiento anterior, que subestimaba el área del
+        municipio porque descartaba la franja de frontera entera; regenera el
+        archivo con scripts/generar_coordenadas_pixeles.py para corregirlo.
+        """
+        if isinstance(data, dict) and "pesos" not in data and "coordenadas_pixeles" in data:
+            data = dict(data)
+            data["pesos"] = [(x, y, 1.0) for x, y in data.pop("coordenadas_pixeles")]
+        return data
+
+    @property
+    def coordenadas_pixeles(self) -> List[Tuple[int, int]]:
+        """Solo las coordenadas, sin cobertura. Para máscaras y recortes."""
+        return [(x, y) for x, y, _ in self.pesos]
+
+    @property
+    def area(self) -> float:
+        """Área del municipio en píxeles de la retícula original."""
+        return sum(w for _, _, w in self.pesos)
 
 class BboxRecorte(BaseModel):
     min_x: int = Field(..., description="Minimum x coordinate")
@@ -38,5 +74,12 @@ class MedicionResultado(BaseModel):
     )
     Mascara_municipio: Optional[List[List[int]]] = Field(
         None, description="Binary mask over the cropped matrix: 1=municipality pixel, 0=otherwise"
+    )
+    Cobertura_municipio: Optional[List[List[float]]] = Field(
+        None,
+        description=(
+            "Fraction of each pixel of the cropped matrix that falls inside the "
+            "municipality, in [0, 1]. Weight these to reproduce the aggregate metrics."
+        ),
     )
     
