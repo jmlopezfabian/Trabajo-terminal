@@ -76,6 +76,9 @@ class MatrizResult(BaseModel):
     municipality_mask: list[list[int]] = Field(
         ..., description="Binary mask: 1=municipality pixel, 0=otherwise"
     )
+    municipality_coverage: list[list[float]] = Field(
+        ..., description="Fraction of each pixel inside the municipality, in [0, 1]"
+    )
 
 
 class ChatRequest(BaseModel):

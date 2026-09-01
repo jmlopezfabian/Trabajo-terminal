@@ -85,18 +85,20 @@ def test_download_and_cleanup_agree_on_the_directory(monkeypatch, tmp_path):
     assert not staged.exists()
 
 
-def test_no_relative_temp_paths_remain():
-    """Guard against a cwd-relative temp path being assigned again.
+def test_no_relative_parent_paths_remain():
+    """Guard against a cwd-relative path being assigned again.
 
     Matches assignments such as `temp_dir = "../temp"`, not prose mentioning
-    the old path in a comment or docstring.
+    the old path in a comment or docstring. Cubre cualquier ruta al directorio
+    padre, no solo "../temp": el mismo fallo reapareció en "../data" y la
+    versión anterior de esta prueba no lo veía.
     """
     import vnp46a1
 
     # rglob, no glob: la mitad de geometría vivía en otro paquete y por eso
     # conservó el "../temp" durante todo el tiempo que este test estuvo en verde.
     source_dir = Path(vnp46a1.__file__).parent
-    pattern = re.compile(r"""=\s*f?["'][^"']*\.\./temp""")
+    pattern = re.compile(r"""=\s*f?["'][^"']*\.\./""")
     offenders = [
         str(path.relative_to(source_dir))
         for path in source_dir.rglob("*.py")

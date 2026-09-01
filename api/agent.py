@@ -189,6 +189,7 @@ def _create_agent() -> Agent:
             "cols": int(result.get("cols", 0)),
             "radiance_matrix": _to_json_serializable(result.get("radiance_matrix", [])),
             "municipality_mask": _to_json_serializable(result.get("municipality_mask", [])),
+            "municipality_coverage": _to_json_serializable(result.get("municipality_coverage", [])),
         }
         if hasattr(data["fecha"], "isoformat"):
             data["fecha"] = data["fecha"].isoformat()
