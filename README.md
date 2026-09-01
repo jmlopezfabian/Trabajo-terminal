@@ -5,10 +5,19 @@ Incluye una **API asíncrona con FastAPI** para lanzar jobs de procesamiento en 
 
 ### Componentes principales
 
-- `satellite_sync/`: implementación **síncrona** del pipeline de procesamiento.
-- `satellite_async/`: implementación **asíncrona**, utilizada por la API.
+El paquete `vnp46a1/` está dividido por responsabilidad, no por modelo de concurrencia:
+
+- `vnp46a1/core/`: configuración, modelos, utilidades y descargas.
+- `vnp46a1/geometria/`: polígono municipal → cobertura por píxel. Corre **una vez por
+  municipio**; su resultado es estático mientras no cambie la delimitación oficial.
+- `vnp46a1/radianza/`: cobertura → métricas de luminosidad. Corre **todos los días**
+  sobre cada imagen, descargando en paralelo y agrupando por cuadrante.
 - `api/`: aplicación FastAPI que expone el procesamiento como servicio HTTP.
-- `Data/`: datos auxiliares (coordenadas de municipios, límites geográficos).
+- `vnp46a1_data/`: datos auxiliares (coordenadas de municipios, límites geográficos).
+
+`geometria` produce lo que `radianza` consume. La distinción entre síncrono y asíncrono
+vive únicamente en `core/downloader.py`, donde las funciones asíncronas llevan el sufijo
+`_async`.
 
 Se utilizan **Pydantic v2** y modelos como `MedicionResultado` para validar y serializar los resultados.
 
@@ -125,7 +134,7 @@ La documentación interactiva y la interfaz web estarán en:
 2. Se calculan métricas de radianza (media, suma, percentiles, máximo, mínimo, etc.) y se modelan con `MedicionResultado`.
 3. Los resultados se consolidan en un `DataFrame` de `pandas` y se **guardan como Parquet** para análisis posterior.
 
-La API usa la implementación **asíncrona** (`satellite_async`) para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
+La API usa `vnp46a1.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
 
 ---
 
