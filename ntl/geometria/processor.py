@@ -13,8 +13,7 @@ from ..core.lectura import leer_radianza
 from ..core.models import MedicionResultado
 from ..core.utils import parse_date, extraer_coordenadas, left_right_coords
 from ..core.downloader import find_file, download_file
-from .cobertura import cobertura_exacta, poligono_en_pixeles
-from .image_processor import metricas_ponderadas
+from .cobertura import cobertura_exacta, metricas_ponderadas, poligono_en_pixeles
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -217,7 +216,7 @@ class SatelliteProcessor:
             
         return pd.DataFrame(results)
 
-    def recortar_imagen_solo(self, date_str: str, quadrant: str) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    def recorte_y_cobertura(self, date_str: str, quadrant: str) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """
         Recorta la imagen y calcula la cobertura, sin agregar métricas.
 

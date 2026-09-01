@@ -53,10 +53,8 @@ def cobertura_de_municipio(nombre: str, cuadrante: str) -> list[list]:
     """
     Devuelve las tripletas (x, y, w) del municipio en la retícula del cuadrante.
 
-    La cobertura se calcula por intersección geométrica exacta: sin factor de
-    subdivisión y sin ningún peso que elegir para el trazo del borde. La
-    aproximación por subdivisión sigue disponible en `pesos_municipio`, pero no
-    hay motivo para usarla aquí, donde el cálculo se paga una sola vez.
+    La cobertura se calcula por intersección geométrica: sin factor de
+    subdivisión y sin ningún peso que elegir para el trazo del borde.
     """
     coordenadas = extraer_coordenadas(nombre)
     if coordenadas is None:

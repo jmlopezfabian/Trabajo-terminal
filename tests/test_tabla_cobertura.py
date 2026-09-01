@@ -18,7 +18,6 @@ from ntl.core.utils import (
     normalize_municipio,
 )
 from ntl.geometria.cobertura import cobertura_exacta, poligono_en_pixeles
-from ntl.geometria.image_processor import pesos_municipio, recortar
 
 FORMA_CUADRANTE = (2400, 2400)
 
@@ -78,24 +77,6 @@ class TestCoherenciaConLaGeometria:
         area_recalculada = float(cobertura_exacta(poligono)[0].sum())
 
         assert datos.area == pytest.approx(area_recalculada, rel=1e-6)
-
-    @pytest.mark.parametrize("nombre", ["Azcapotzalco", "Iztacalco"])
-    def test_la_aproximacion_por_subdivision_converge_a_la_tabla(self, nombre):
-        """`pesos_municipio` a k=32 debe acercarse a la cobertura exacta.
-
-        Comprueba que la aproximación por subdivisión y el método exacto no se
-        hayan separado: `pesos_municipio` ya no genera la tabla, pero sigue
-        disponible y conviene que siga siendo correcto.
-        """
-        datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
-        coordenadas = extraer_coordenadas(nombre)
-        vacia = np.zeros(FORMA_CUADRANTE, dtype=np.float32)
-        recorte, nx, ny = recortar(
-            vacia, coordenadas, esquina_superior_izquierda(datos.cuadrante), 32
-        )
-        aproximada = float(pesos_municipio(recorte.shape, nx, ny, 32).sum())
-
-        assert aproximada == pytest.approx(datos.area, rel=1e-3)
 
     def test_el_area_supera_el_conteo_de_pixeles_interiores(self):
         """
@@ -176,10 +157,9 @@ class TestOracleDeShapely:
     """
     Los pesos deben coincidir con el área exacta de intersección polígono-píxel.
 
-    `pesos_municipio` decide la geometría sobre una submalla de 32x32 y asigna
-    0.5 a los subpíxeles que el trazo del borde atraviesa. Es un heurístico
-    razonable, no una fórmula de área, así que conviene atarlo a la única
-    respuesta que no admite discusión: recortar el polígono contra cada celda.
+    El archivo distribuido es un dato generado, y conviene atarlo a la única
+    respuesta que no admite discusión: recortar el polígono contra cada celda y
+    medir el área del fragmento.
 
     ATENCIÓN a lo que esta prueba NO valida. Construye las celdas con el mismo
     origen que usa el pipeline, así que confirma el *rasterizado*, no el
@@ -374,5 +354,5 @@ class TestUnCaminoUnico:
         from ntl.geometria.processor import SatelliteProcessor
 
         for metodo in (SatelliteProcessor.__init__, SatelliteProcessor.get_measures,
-                       SatelliteProcessor.run, SatelliteProcessor.recortar_imagen_solo):
+                       SatelliteProcessor.run, SatelliteProcessor.recorte_y_cobertura):
             assert "factor_escala" not in inspect.signature(metodo).parameters, metodo.__name__
