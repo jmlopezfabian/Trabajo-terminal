@@ -29,7 +29,7 @@
       <li><a href="#introduccion">Introducción</a></li>
       <li><a href="#fuente-de-datos">Fuente de datos</a>
         <ol style="font-size:0.95em;margin-top:0.3rem">
-          <li><a href="#vnp46a1">Conjunto VNP46A1</a></li>
+          <li><a href="#vnp46a1">Conjunto Black Marble</a></li>
           <li><a href="#delimitacion">Delimitación municipal</a></li>
         </ol>
       </li>
@@ -58,6 +58,12 @@
           <li><a href="#convergencia">Convergencia y elección del factor</a></li>
         </ol>
       </li>
+      <li><a href="#producto">Corrección atmosférica y calidad</a>
+        <ol style="font-size:0.95em;margin-top:0.3rem">
+          <li><a href="#atsensor">El límite de la radianza al sensor</a></li>
+          <li><a href="#brdf">Producto corregido y banderas</a></li>
+        </ol>
+      </li>
       <li><a href="#conjunto-de-datos">Conjunto de datos resultante</a></li>
       <li><a href="#referencias">Referencias</a></li>
     </ol>
@@ -80,7 +86,7 @@
     <!-- Abstract -->
     <div class="abstract">
       <strong>Resumen</strong>
-      Se presenta la metodología computacional desarrollada para extraer, georreferenciar y agregar datos de luminosidad nocturna del producto satelital VNP46A1 (Black Marble) de la NASA a nivel de municipio. El proceso transforma imágenes diarias en formato HDF5, descargadas del servidor LAADS DAAC, en un conjunto de estadísticas descriptivas de radianza por municipio y fecha. La metodología comprende la transformación de coordenadas geográficas al sistema de referencia de la imagen, el cierre de bordes del polígono municipal mediante interpolación lineal, la identificación de píxeles interiores mediante búsqueda en amplitud, y la detección de regiones desconectadas mediante una búsqueda inversa desde los bordes de la imagen. El factor de escala que refina la delimitación se aplica sobre la máscara del municipio y no sobre la radianza, lo que permite expresar las métricas como agregados ponderados por el área que cada píxel aporta y las vuelve invariantes a dicho factor. Se valida la delimitación contra la intersección geométrica exacta del polígono con la retícula, cuantificando el sesgo del tratamiento de la frontera y estableciendo un criterio analítico para elegir el factor. Se describen también las optimizaciones implementadas —precomputo de la cobertura y procesamiento asíncrono por lotes— que redujeron el tiempo de procesamiento en un factor significativo.
+      Se presenta la metodología computacional desarrollada para extraer, georreferenciar y agregar datos de luminosidad nocturna del producto satelital VNP46A1 (Black Marble) de la NASA a nivel de municipio. El proceso transforma imágenes diarias en formato HDF5, descargadas del servidor LAADS DAAC, en un conjunto de estadísticas descriptivas de radianza por municipio y fecha. La metodología comprende la transformación de coordenadas geográficas al sistema de referencia de la imagen, el cierre de bordes del polígono municipal mediante interpolación lineal, la identificación de píxeles interiores mediante búsqueda en amplitud, y la detección de regiones desconectadas mediante una búsqueda inversa desde los bordes de la imagen. El factor de escala que refina la delimitación se aplica sobre la máscara del municipio y no sobre la radianza, lo que permite expresar las métricas como agregados ponderados por el área que cada píxel aporta y las vuelve invariantes a dicho factor. Se valida la delimitación contra la intersección geométrica exacta del polígono con la retícula, cuantificando el sesgo del tratamiento de la frontera y estableciendo un criterio analítico para elegir el factor. Acotado el error de agregación por debajo del 0.001 %, se identifica que la fuente dominante de error no es geométrica sino atmosférica, y se adopta el producto VNP46A2 —corregido por reflectancia bidireccional lunar y acompañado de banderas de calidad por píxel— con lo que la dispersión de la serie se reduce entre dos y cuatro veces. Se describen también las optimizaciones implementadas —precomputo de la cobertura y procesamiento asíncrono por lotes— que redujeron el tiempo de procesamiento en un factor significativo.
     </div>
 
     <!-- ─────────────────────────────────────── -->
@@ -95,19 +101,24 @@
     <!-- ─────────────────────────────────────── -->
     <h2 class="section" id="fuente-de-datos">Fuente de datos</h2>
 
-    <h3 class="subsection" id="vnp46a1">Conjunto de datos VNP46A1</h3>
+    <h3 class="subsection" id="vnp46a1">Conjunto de datos Black Marble</h3>
 
-    <p>El sensor <em>Day/Night Band</em> del instrumento VIIRS (VIIRS-DNB), a bordo de las plataformas satelitales Suomi National Polar-orbiting Partnership (S-NPP) y el Joint Polar Satellite System, orbita la Tierra diariamente. La NASA ha desarrollado a partir de este sensor el conjunto <em>Black Marble</em> (VNP46/VJ146), considerado el estado del arte para investigación con datos de luminosidad nocturna [2].</p>
+    <p>El sensor <em>Day/Night Band</em> del instrumento VIIRS (VIIRS-DNB), a bordo de las plataformas satelitales Suomi National Polar-orbiting Partnership (S-NPP) y el Joint Polar Satellite System, orbita la Tierra diariamente. La NASA ha desarrollado a partir de este sensor el conjunto <em>Black Marble</em> (VNP46/VJ146), considerado el estado del arte para investigación con datos de luminosidad nocturna [2]. Tiene una resolución espacial de 15 arco-segundos, aproximadamente 500 m, y está disponible desde enero de 2012. Los archivos se distribuyen en formato HDF5 sobre una cuadrícula de 460 cuadrantes de 10° × 10°, identificados con la notación $hXXvYY$; el que cubre la Ciudad de México es el $h08v07$.</p>
 
-    <p>El producto VNP46A1 corresponde al nivel diario de este conjunto, con el nombre completo <em>VIIRS/NPP Daily Gridded Day Night Band 15 arc-second Linear Lat Lon Grid Night</em>. Tiene una resolución espacial de 15 arco-segundos (aproximadamente 500 m) y está disponible desde enero de 2012. Los archivos se distribuyen en formato HDF5 y se organizan en una cuadrícula de 460 cuadrantes de 10° × 10°. Cada cuadrante se identifica mediante la notación $hXXvYY$; el cuadrante que cubre la Ciudad de México es el $h08v07$.</p>
+    <p>El conjunto publica dos productos diarios que este trabajo distingue de forma explícita, porque la elección entre ellos resultó tener más efecto sobre la serie que cualquier decisión del procesamiento geométrico.</p>
 
-    <p>Dentro de cada archivo HDF5, los datos de radianza nocturna se encuentran en la ruta:</p>
+    <p><strong>VNP46A1</strong> entrega la radianza <em>tal como llega al sensor</em>: sin corregir por iluminación lunar, nubosidad ni atenuación atmosférica, y sin ninguna bandera que indique si la observación es utilizable. Una noche completamente nublada produce un valor numérico plausible que no corresponde a luz emitida desde el suelo.</p>
 
-    <pre style="background:#f5f5f0;border:1px solid #ddd;border-radius:4px;padding:0.75rem 1rem;font-size:0.82rem;overflow-x:auto"><code>HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m</code></pre>
+    <p><strong>VNP46A2</strong> entrega la misma escena tras corregir la reflectancia bidireccional lunar y la atmósfera, acompañada de <code>Mandatory_Quality_Flag</code>, que califica cada píxel individualmente. En la colección 2.0, el valor 0 indica alta calidad y los valores 1 a 5 distintas causas de descarte —eclipse lunar, aurora, destello especular—, mientras que 255 señala ausencia de recuperación.</p>
 
-    <p>Esta matriz tiene dimensiones $2400 \times 2400$ píxeles, donde cada elemento $I_{j,k}$ indica la intensidad de luminosidad en la posición $(j, k)$ del cuadrante. El nombre de cada archivo sigue la nomenclatura:</p>
+    <p>El procesamiento descrito en este trabajo utiliza <strong>VNP46A2</strong>. La sección 6 cuantifica la diferencia. Las rutas de los datos de radianza dentro del archivo HDF5 son, respectivamente:</p>
 
-    <p style="text-align:center;font-family:monospace;font-size:0.85rem">VNP46A1.AYYYYDDD.hXXvYY.CCC.YYYYDDDHHMM<wbr>SS.h5</p>
+    <pre style="background:#f5f5f0;border:1px solid #ddd;border-radius:4px;padding:0.75rem 1rem;font-size:0.82rem;overflow-x:auto"><code>VNP46A2   HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/DNB_BRDF-Corrected_NTL
+VNP46A1   HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m</code></pre>
+
+    <p>Cada matriz tiene dimensiones $2400 \times 2400$ píxeles, donde el elemento $I_{j,k}$ es la radianza en la posición $(j, k)$ del cuadrante, expresada en nW·cm⁻²·sr⁻¹. Los valores enteros requieren aplicar los atributos <code>scale_factor</code> y <code>add_offset</code> que el propio conjunto de datos declara, y descartar los que coincidan con <code>_FillValue</code> o queden fuera del intervalo <code>valid_min</code>–<code>valid_max</code>: omitir esa conversión deja la serie en cuentas digitales, y omitir el descarte introduce el valor de relleno en los agregados como si fuera luminosidad. El nombre de cada archivo sigue la nomenclatura:</p>
+
+    <p style="text-align:center;font-family:monospace;font-size:0.85rem">VNP46A2.AYYYYDDD.hXXvYY.CCC.YYYYDDDHHMM<wbr>SS.h5</p>
 
     <p>donde <code>AYYYYDDD</code> indica el año y día del año de adquisición (fecha juliana), <code>hXXvYY</code> el identificador del cuadrante, <code>CCC</code> la versión de la colección, y <code>h5</code> el formato HDF5. Los archivos se obtienen del servidor LAADS DAAC (<em>Level-1 and Atmosphere Archive and Distribution System Distributed Active Archive Center</em>) de la NASA [3].</p>
 
@@ -272,8 +283,16 @@
     <p>El conjunto resultante se colapsa a la resolución original acumulando, para cada píxel $p$ del recorte, la fracción de sus $f^2$ subpíxeles que pertenecen al municipio. Los subpíxeles por los que pasa el trazo del borde reciben peso $\tfrac{1}{2}$, ya que la frontera los atraviesa por la mitad y contarlos enteros o descartarlos introduce sesgos de magnitud comparable y signo opuesto:</p>
 
     <div class="math-block">
-      $$w_p = \frac{1}{f^2} \sum_{s \in p} \left( \mathbb{1}[s \in \text{Interior}] + \tfrac{1}{2}\,\mathbb{1}[s \in b] \right), \qquad w_p \in [0,1] \tag{10}$$
+      $$\hat{w}_p = \frac{1}{f^2} \sum_{s \in p} \left( \mathbb{1}[s \in \text{Interior}] + \tfrac{1}{2}\,\mathbb{1}[s \in b] \right), \qquad \hat{w}_p \in [0,1] \tag{10}$$
     </div>
+
+    <p>Ahora bien, la ecuación (10) es un <em>estimador</em> de una cantidad que admite forma cerrada. La fracción de un píxel que el municipio cubre no es otra cosa que el área de la intersección entre el polígono $P$ y el cuadrado unitario de la celda:</p>
+
+    <div class="math-block">
+      $$w_p = \operatorname{area}(P \cap p) \tag{11}$$
+    </div>
+
+    <p>La subdivisión no aporta información adicional —cada subpíxel replica el valor del píxel que lo contiene— sino que estima $w_p$ contando cajas, y $\hat{w}_p \to w_p$ cuando $f \to \infty$. El procesamiento utiliza por tanto la ecuación (11) de forma directa: no requiere elegir el factor $f$ ni el peso asignado al trazo del borde, y su costo es equivalente porque la cobertura se calcula una sola vez por municipio. La ecuación (10) se conserva porque permite estudiar la convergencia, y la sección 5 la emplea con ese fin.</p>
 
     <p>La matriz de pesos $w$ tiene la forma del recorte y sustituye a la lista de coordenadas interiores: $w_p = 1$ para los píxeles completamente contenidos, $w_p = 0$ para los exteriores y un valor intermedio para los de frontera. Su suma es el área del municipio expresada en píxeles originales.</p>
 
@@ -291,18 +310,18 @@
     <p>Las estadísticas se calculan sobre los píxeles del recorte ponderados por su cobertura $w_p$, no sobre un conteo de subpíxeles. El área $A$, la suma $\Sigma$ y la media $\mu$ del municipio $i$ en la fecha $j$ son:</p>
 
     <div class="math-block">
-      $$A = \sum_p w_p, \qquad \Sigma = \sum_p w_p\, v_p, \qquad \mu = \frac{\Sigma}{A} \tag{11}$$
+      $$A = \sum_p w_p, \qquad \Sigma = \sum_p w_p\, v_p, \qquad \mu = \frac{\Sigma}{A} \tag{12}$$
     </div>
 
     <p>donde $v_p$ es la radianza del píxel $p$. La dispersión se obtiene con la misma ponderación:</p>
 
     <div class="math-block">
-      $$\sigma^2 = \frac{1}{A}\sum_p w_p\,(v_p - \mu)^2 \tag{12}$$
+      $$\sigma^2 = \frac{1}{A}\sum_p w_p\,(v_p - \mu)^2 \tag{13}$$
     </div>
 
     <p>Los percentiles se evalúan sobre la masa de área acumulada: ordenados los valores de forma creciente, $P_q$ es el $v_p$ en el que la fracción acumulada $\left(\sum_{p' \le p} w_{p'} - \tfrac{1}{2}w_p\right)/A$ alcanza $q$.</p>
 
-    <p>Esta formulación tiene una propiedad que la versión no ponderada no posee: <strong>todas las métricas son invariantes al factor de escala</strong>. Aumentar $f$ refina los pesos $w_p$, pero no multiplica ninguna cantidad, porque el conteo de subpíxeles queda normalizado dentro de la ecuación (10). En particular, $A$ es un área en píxeles originales —no un número de subpíxeles— y por lo tanto es comparable entre corridas con distinta configuración y entre municipios. El conjunto resultante es:</p>
+    <p>Esta formulación tiene una propiedad que la versión no ponderada no posee: <strong>todas las métricas son invariantes al factor de escala</strong>. Aumentar $f$ refina los pesos $w_p$, pero no multiplica ninguna cantidad, porque $w_p$ es una fracción de área y no un conteo. En particular, $A$ es un área en píxeles originales —no un número de subpíxeles— y por lo tanto es comparable entre corridas con distinta configuración y entre municipios. El conjunto resultante es:</p>
 
     <table>
       <thead>
@@ -335,7 +354,7 @@
 
     <p>La identificación de los píxeles que pertenecen a un municipio —etapas 3 a 7 de la metodología— produce siempre el mismo resultado, puesto que la delimitación geográfica de un municipio dentro de un cuadrante satelital es estática. Recalcular estas coordenadas en cada ejecución diaria resultaba redundante.</p>
 
-    <p>Para eliminar este costo, se desarrolló un proceso independiente que ejecuta el mapeo geográfico una única vez por municipio: calcula la cobertura $w_p$ de cada píxel según la ecuación (10) y almacena el resultado en un archivo de consulta estructurado. En ejecuciones posteriores, el proceso principal omite completamente las etapas de transformación geométrica, reduciendo cada iteración diaria a la descarga del archivo HDF5, la lectura de los valores de radianza en las posiciones prealmacenadas y la agregación ponderada de las ecuaciones (11) y (12).</p>
+    <p>Para eliminar este costo, se desarrolló un proceso independiente que ejecuta el mapeo geográfico una única vez por municipio: calcula la cobertura $w_p$ de cada píxel según la ecuación (11) y almacena el resultado en un archivo de consulta estructurado. En ejecuciones posteriores, el proceso principal omite completamente las etapas de transformación geométrica, reduciendo cada iteración diaria a la descarga del archivo HDF5, la lectura de los valores de radianza en las posiciones prealmacenadas y la agregación ponderada de las ecuaciones (12) y (13).</p>
 
     <p>Lo que se almacena es una tripleta $(x, y, w_p)$ por píxel, no solo la posición. Guardar únicamente las coordenadas obliga a decidir cada celda de frontera entera y, por lo tanto, hace imposible expresar el resultado del refinamiento descrito en la sección 3: el formato del archivo intermedio determina qué precisión puede alcanzar la etapa que lo consume.</p>
 
@@ -410,7 +429,7 @@
     <p>La cobertura real de cada píxel puede calcularse de forma analítica, sin discretizar, como el área de la intersección entre el polígono municipal $P$ y el cuadrado unitario del píxel:</p>
 
     <div class="math-block">
-      $$w_p^{*} = \operatorname{area}(P \cap p) \tag{13}$$
+      $$w_p^{*} = \operatorname{area}(P \cap p) \tag{14}$$
     </div>
 
     <p>Esta cantidad es el límite al que converge la ecuación (10) cuando $f \to \infty$, y proporciona la referencia contra la que se evalúa cualquier valor finito. Su cómputo con geometría preparada toma del orden de $10^{-2}$ s por municipio.</p>
@@ -452,16 +471,18 @@
     <p>Medido contra la referencia (13), el error del área obedece una ley de potencia limpia. El producto del error por el factor es constante para cada municipio, con un coeficiente de variación entre 1.1 % y 5 % a lo largo de todo el rango:</p>
 
     <div class="math-block">
-      $$\bigl|\varepsilon_m(f)\bigr| \cdot f = a_m, \qquad a_m \approx 54.6\,\frac{P_m}{A_m} \quad (R^2 = 0.868) \tag{14}$$
+      $$\bigl|\varepsilon_m(f)\bigr| \cdot f = a_m, \qquad a_m \approx 54.6\,\frac{P_m}{A_m} \quad (R^2 = 0.868) \tag{15}$$
     </div>
 
     <p>La constante $a_m$ coincide con el sesgo medido en $f = 1$, que se obtiene de la pura geometría del polígono sin procesar ninguna imagen. En consecuencia, el factor óptimo no requiere un barrido experimental: se despeja para la tolerancia deseada.</p>
 
     <div class="math-block">
-      $$f^{*}_m = \left\lceil \frac{a_m}{\text{tolerancia en \%}} \right\rceil \tag{15}$$
+      $$f^{*}_m = \left\lceil \frac{a_m}{\text{tolerancia en \%}} \right\rceil \tag{16}$$
     </div>
 
     <p>Para las 17 demarcaciones procesadas, $a_m$ va de 6.8 (Milpa Alta) a 30.3 (Iztacalco), lo que exige factores entre 7 y 31 para alcanzar 1 % de error si la frontera se descarta.</p>
+
+    <p>El procesamiento no necesita elegir $f$ en ningún caso, porque emplea la forma cerrada de la ecuación (11). La comparación contra <em>exactextract</em>, una implementación independiente en C++ de la cobertura fraccional, arroja una discrepancia máxima de 0.000004 % en área, atribuible al redondeo con que se almacena la tabla precalculada. Frente al área geodésica sobre el elipsoide WGS84 la discrepancia máxima es de 0.0004 %, y la superficie agregada de la Ciudad de México queda a 0.046 % de la cifra oficial del INEGI. Este apartado documenta, por tanto, el comportamiento de la aproximación y la razón por la que no se emplea.</p>
 
     <figure>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" font-family="Georgia, serif" font-size="12" style="max-width:100%;border:none">
@@ -526,6 +547,44 @@
     <p>Sobre la serie histórica, el efecto del sesgo depende del uso. El factor de corrección $\Sigma^{*}/\Sigma_{f=1}$ resultó estable en el tiempo —coeficiente de variación menor a 0.71 % entre cinco fechas de 2025— y la correlación entre la serie previa y la corregida es 1.0000. Los análisis puramente temporales dentro de un mismo municipio, como tasas de crecimiento o descomposición de tendencia, no se ven afectados: el sesgo actúa como un factor multiplicativo constante. Las comparaciones transversales sí lo están, porque el sesgo varía entre −6.9 % y −30.2 % según la forma del municipio. Recalculando la densidad media de 2024 con el área correcta, Iztacalco desciende del cuarto al octavo lugar y Tlalpan asciende del decimosexto al decimocuarto.</p>
 
     <!-- ─────────────────────────────────────── -->
+    <h2 class="section" id="producto">Corrección atmosférica y calidad de la observación</h2>
+
+    <p>Las secciones anteriores acotan el error de la agregación geométrica por debajo del 0.001 %. Esa cifra sitúa el problema en su lugar: la agregación dejó de ser la fuente dominante de error, y conviene examinar cuál lo es.</p>
+
+    <h3 class="subsection" id="atsensor">El límite de la radianza al sensor</h3>
+
+    <p>VNP46A1 entrega la señal que llega al instrumento. Sobre esa señal actúan la iluminación lunar, que varía con el ciclo sinódico; la nubosidad, que atenúa o bloquea por completo la emisión del suelo; y la atenuación atmosférica. Ninguno de esos factores guarda relación con la actividad económica que se pretende medir, y el producto no incorpora indicador alguno que permita descartar una observación inservible.</p>
+
+    <p>La consecuencia es directa. De cinco fechas de 2025 procesadas para Iztapalapa, la del 5 de enero registró una cobertura nubosa del 100 % sobre el municipio y produjo una suma de radianza un 26 % por debajo de la mediana. Esa caída no corresponde a una reducción de la actividad nocturna: corresponde a que el suelo no era visible. El procesamiento la incorporó a la serie como una medición válida.</p>
+
+    <h3 class="subsection" id="brdf">Producto corregido y banderas de calidad</h3>
+
+    <p>VNP46A2 corrige la reflectancia bidireccional lunar y la atenuación atmosférica, y acompaña cada píxel de <code>Mandatory_Quality_Flag</code>. El procesamiento conserva únicamente los píxeles con valor 0 —alta calidad— y descarta los valores 1 a 5 y el 255. Los píxeles descartados se excluyen del agregado en lugar de contarse, de modo que el área efectivamente medida se reduce; la fracción del territorio con observación válida se registra junto con cada medición.</p>
+
+    <p>Para la fecha del 5 de enero, VNP46A2 no conserva ningún píxel utilizable en Iztapalapa. El producto identifica la observación como inservible, que es la respuesta correcta y la que VNP46A1 no puede dar.</p>
+
+    <div class="math-block">
+      $$\Sigma = \sum_{p \,:\, q_p = 0} w_p\, v_p, \qquad \text{fracción válida} = \frac{\sum_{p \,:\, q_p = 0} w_p}{\sum_p w_p} \tag{17}$$
+    </div>
+
+    <p>El efecto sobre la variabilidad de la serie se muestra en la tabla siguiente, calculada sobre las mismas cinco fechas. La columna de VNP46A2 excluye las observaciones que el producto marca como inutilizables.</p>
+
+    <table>
+      <thead>
+        <tr><th>Demarcación</th><th>VNP46A1</th><th>VNP46A2</th><th>Reducción</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Iztapalapa</td><td>12.1 %</td><td>3.8 %</td><td>3.2×</td></tr>
+        <tr><td>Azcapotzalco</td><td>12.8 %</td><td>3.4 %</td><td>3.8×</td></tr>
+        <tr><td>Milpa Alta</td><td>23.9 %</td><td>12.0 %</td><td>2.0×</td></tr>
+      </tbody>
+    </table>
+
+    <p>La dispersión relativa de la suma de radianza se reduce entre dos y cuatro veces. Para la estimación de elasticidades esa reducción se traduce directamente en potencia estadística, y es de una magnitud que ninguna mejora del procesamiento geométrico podría alcanzar.</p>
+
+    <p>Conviene señalar una implicación operativa. En noches de buena calidad, Milpa Alta conserva entre el 64 % y el 85 % de su territorio con observación válida, por ser una demarcación rural y montañosa. Como la fracción medida varía entre fechas, la <em>suma</em> de radianza no es directamente comparable a lo largo del tiempo, mientras que la <em>media</em> ponderada sí lo es, al estar normalizada por el área efectivamente observada. Las series temporales por demarcación deberían construirse sobre la media.</p>
+
+    <!-- ─────────────────────────────────────── -->
     <h2 class="section" id="conjunto-de-datos">Conjunto de datos resultante</h2>
 
     <p>El resultado del proceso es un conjunto de datos tabulares donde cada registro corresponde a una combinación de municipio y fecha, con las nueve métricas estadísticas de radianza descritas en la sección anterior. La estructura del conjunto de datos es la siguiente:</p>
@@ -538,6 +597,9 @@
         </tr>
       </thead>
       <tbody>
+        <tr><td>Producto</td><td>Producto del que proviene la radianza (VNP46A2 o VNP46A1). Sus niveles difieren entre 10 % y 20 %: una serie no debe mezclarlos</td></tr>
+        <tr><td>Unidades de radianza</td><td>Unidades físicas de los campos de radianza (nW·cm⁻²·sr⁻¹)</td></tr>
+        <tr><td>Fracción válida</td><td>Proporción del territorio con observación de calidad. Por debajo de 1, la suma cubre solo esa fracción</td></tr>
         <tr><td>Cuadrante</td><td>Cuadrante de origen según la cuadrícula de Black Marble ($hXXvYY$)</td></tr>
         <tr><td>Municipio</td><td>Nombre del municipio</td></tr>
         <tr><td>Fecha</td><td>Fecha de toma de la imagen (yyyy-mm-dd)</td></tr>
@@ -556,7 +618,7 @@
     <p>Este conjunto de datos $NTL_{i,j}$ sirve como insumo para la estimación de la elasticidad entre luminosidad nocturna y PIB, siguiendo el marco estadístico propuesto por Henderson <em>et al.</em> [1], donde se relaciona el crecimiento en luces con el crecimiento en ingresos reales mediante:</p>
 
     <div class="math-block">
-      $$\log(PIB_{j,t}) = \hat{\alpha} + \hat{\beta}\,\log(NTL_{j,t}) + \epsilon_{j,t} \tag{16}$$
+      $$\log(PIB_{j,t}) = \hat{\alpha} + \hat{\beta}\,\log(NTL_{j,t}) + \epsilon_{j,t} \tag{18}$$
     </div>
 
     <p>donde $\hat{\beta}$ representa la elasticidad entre la luminosidad nocturna productiva y el PIB municipal, y $\epsilon_{j,t}$ captura tanto el error de medición del satélite como la variabilidad no explicada por la NTL.</p>
