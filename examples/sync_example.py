@@ -5,10 +5,9 @@ def main() -> None:
     municipio = "Iztapalapa"
     fechas = ["01-01-24"]
     tile = "h08v07"
-    factor_escala = 1
 
-    processor = SatelliteProcessor(municipio, factor_escala=factor_escala)
-    df = processor.run(fechas, tile, show_plots=False, factor_escala=factor_escala)
+    processor = SatelliteProcessor(municipio)
+    df = processor.run(fechas, tile, show_plots=False)
 
     if df.empty:
         print("No se obtuvieron resultados.")

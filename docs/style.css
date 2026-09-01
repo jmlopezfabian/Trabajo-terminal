@@ -23,6 +23,9 @@
   --color-td-alt: #161b22;
 
   --toc-width: 220px;
+
+  /* Trazo del contorno municipal sobre la figura de cobertura */
+  --color-trazo:  #e3b341;
 }
 
 /* --- Base --- */
@@ -331,3 +334,45 @@ footer {
   article { padding: 1.5rem 0 4rem; }
   .page-wrap { padding: 0 1rem; }
 }
+
+/* --- Figura interactiva de cobertura --- */
+.cobertura-fig .controles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  font-family: sans-serif;
+  font-size: 0.78rem;
+}
+.cobertura-fig select {
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+}
+.cobertura-fig .metodos { display: flex; border: 1px solid var(--color-border); border-radius: 3px; overflow: hidden; }
+.cobertura-fig .metodos button {
+  font: inherit;
+  padding: 0.3rem 0.7rem;
+  background: var(--surface-2);
+  color: var(--color-muted);
+  border: none;
+  cursor: pointer;
+}
+.cobertura-fig .metodos button[aria-pressed="true"] { background: var(--color-accent); color: var(--bg); }
+.cobertura-fig .metodos button:focus-visible,
+.cobertura-fig select:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.cobertura-fig canvas { display: block; width: 100%; height: auto; border-radius: 3px; }
+.cobertura-fig .medida {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  margin-top: 0.55rem;
+  min-height: 1.1em;
+  text-align: left;
+}
+.cobertura-fig .medida b { color: var(--color-text); font-weight: 500; }

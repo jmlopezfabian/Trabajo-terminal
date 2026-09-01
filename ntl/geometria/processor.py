@@ -13,14 +13,7 @@ from ..core.lectura import leer_radianza
 from ..core.models import MedicionResultado
 from ..core.utils import parse_date, extraer_coordenadas, left_right_coords
 from ..core.downloader import find_file, download_file
-from .image_processor import (
-    recortar,
-    recortar_imagen,
-    completar_bordes,
-    get_pixeles,
-    pesos_municipio,
-    metricas_ponderadas,
-)
+from .cobertura import cobertura_exacta, metricas_ponderadas, poligono_en_pixeles
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -30,9 +23,8 @@ class SatelliteProcessor:
     Clase principal para procesar imágenes satelitales del producto VNP46A2.
     """
     
-    def __init__(self, municipio: str, factor_escala: int = 1):
+    def __init__(self, municipio: str):
         self.municipio = municipio
-        self.factor_escala = factor_escala
     
     def _save_plot(self, fig, date_obj: str, quadrant: str, plot_type: str = "analysis"):
         """
@@ -54,7 +46,7 @@ class SatelliteProcessor:
         finally:
             plt.close(fig)
     
-    def get_measures(self, date_str: str, quadrant: str, show_plots: bool = True, factor_escala: int = None) -> Optional[dict]:
+    def get_measures(self, date_str: str, quadrant: str, show_plots: bool = True) -> Optional[dict]:
         """
         Consulta, descarga y extrae las coordenadas de una imagen satelital para un día y cuadrante.
         
@@ -62,15 +54,11 @@ class SatelliteProcessor:
             date_str: Fecha en formato dd-mm-yy
             quadrant: Cuadrante de la imagen
             show_plots: Si mostrar las gráficas de visualización
-            factor_escala: Factor de escala para aumentar la resolución de la imagen (por defecto usa el del constructor)
-            
+
         Returns:
             Diccionario con las mediciones o None si hay error
         """
         year, day, date_obj = parse_date(date_str)
-        
-        # Usar el factor de escala pasado como parámetro o el del constructor
-        escala_a_usar = factor_escala if factor_escala is not None else self.factor_escala
 
         # Buscar y descargar archivo
         h5_url = find_file(year, day, quadrant)
@@ -114,89 +102,48 @@ class SatelliteProcessor:
                 ax[0][0].imshow(copia_imagen)
                 ax[0][0].set_title(f"Imagen completa {self.municipio} - {date_obj}")
                 
-            # Recortar imagen. El recorte se queda en resolución original: el
-            # factor de escala solo viaja en las coordenadas del borde.
             try:
-                imagen_recortada, nuevos_x, nuevos_y = recortar(
-                    image_matrix, coordenadas_municipio, left_coord, escala_a_usar
+                # La pertenencia de cada píxel se resuelve por intersección
+                # geométrica: es el mismo cálculo que alimenta la tabla
+                # precalculada del procesamiento por lotes.
+                poligono = poligono_en_pixeles(
+                    coordenadas_municipio, left_coord, image_matrix.shape
                 )
+                pesos, fila_0, columna_0 = cobertura_exacta(poligono)
+                alto, ancho = pesos.shape
+                imagen_recortada = image_matrix[fila_0:fila_0 + alto, columna_0:columna_0 + ancho]
 
-                # Validar que la imagen recortada no esté vacía
                 if imagen_recortada.size == 0:
                     print("La imagen recortada está vacía. Verifica las coordenadas del municipio.")
                     return None
 
-                copia_imagen = np.clip(imagen_recortada, 0, np.percentile(imagen_recortada, 99))
+                copia_imagen = np.clip(imagen_recortada, 0,
+                                       np.nanpercentile(imagen_recortada, 99))
 
-                # Para graficar, las coordenadas vuelven a la malla original
-                grafica_x = nuevos_x / escala_a_usar
-                grafica_y = nuevos_y / escala_a_usar
+                # Contorno del municipio en coordenadas del recorte, para superponerlo
+                contorno_x, contorno_y = poligono.exterior.coords.xy
+                contorno_x = np.asarray(contorno_x) - columna_0
+                contorno_y = np.asarray(contorno_y) - fila_0
 
                 if show_plots:
-                    ax[0][1].imshow(imagen_recortada)
+                    ax[0][1].imshow(copia_imagen)
                     ax[0][1].set_title("Imagen recortada")
 
-                # Preparar coordenadas de bordes incompletos para visualización (sin modificar la imagen)
-                bordes_incompletos_x = []
-                bordes_incompletos_y = []
-                for i in range(len(nuevos_y)):
-                    if (0 <= int(grafica_y[i]) < imagen_recortada.shape[0] and
-                        0 <= int(grafica_x[i]) < imagen_recortada.shape[1]):
-                        bordes_incompletos_x.append(int(grafica_x[i]))
-                        bordes_incompletos_y.append(int(grafica_y[i]))
-
-                if show_plots:
                     ax[1][0].imshow(copia_imagen)
-                    if bordes_incompletos_x:
-                        ax[1][0].plot(bordes_incompletos_x, bordes_incompletos_y, 'k-', linewidth=1.5, alpha=0.8, label='Bordes')
-                        ax[1][0].scatter(bordes_incompletos_x, bordes_incompletos_y, c='red', s=1, alpha=0.6)
-                    ax[1][0].set_title("Imagen con bordes incompletos")
+                    ax[1][0].plot(contorno_x, contorno_y, 'k-', linewidth=1.5, alpha=0.9,
+                                  label='Contorno del municipio')
+                    ax[1][0].set_title("Recorte con el contorno superpuesto")
+                    ax[1][0].legend(loc='upper right', fontsize=8)
 
-                # Preparar coordenadas de bordes completos para visualización.
-                # Solo se trazan si hay que graficar: la medición no los necesita,
-                # pesos_municipio los calcula por su cuenta.
-                bordes_completos_x = []
-                bordes_completos_y = []
-                if show_plots:
-                    for coordenada in completar_bordes(nuevos_x, nuevos_y):
-                        bx, by = coordenada[0] / escala_a_usar, coordenada[1] / escala_a_usar
-                        if (0 <= by < imagen_recortada.shape[0] and
-                            0 <= bx < imagen_recortada.shape[1]):
-                            bordes_completos_x.append(bx)
-                            bordes_completos_y.append(by)
+                    im = ax[1][1].imshow(pesos, cmap="Blues", vmin=0, vmax=1)
+                    ax[1][1].plot(contorno_x, contorno_y, 'k-', linewidth=1.5, alpha=0.9)
+                    ax[1][1].set_title("Cobertura por píxel")
+                    fig.colorbar(im, ax=ax[1][1], fraction=0.046)
 
-                if show_plots:
-                    ax[1][1].imshow(copia_imagen)
-                    if bordes_completos_x:
-                        # Dibujar bordes como línea cerrada
-                        if len(bordes_completos_x) > 1:
-                            ax[1][1].plot(bordes_completos_x + [bordes_completos_x[0]], 
-                                         bordes_completos_y + [bordes_completos_y[0]], 
-                                         'k-', linewidth=2, alpha=0.9, label='Bordes completos')
-                        ax[1][1].scatter(bordes_completos_x, bordes_completos_y, c='red', s=2, alpha=0.7)
-                    ax[1][1].set_title("Imagen con bordes completos")
-
-
-                # Aquí entra el producto Kronecker: la malla fina se construye
-                # solo para decidir qué fracción de cada píxel original cae
-                # dentro, y se colapsa de inmediato a una matriz de pesos del
-                # tamaño del recorte. La radianza nunca se replica.
-                pesos = pesos_municipio(
-                    imagen_recortada.shape, nuevos_x, nuevos_y, escala_a_usar
-                )
-
-                if show_plots:
                     ax[2][0].imshow(copia_imagen)
-                    # Dibujar bordes
-                    if bordes_completos_x:
-                        if len(bordes_completos_x) > 1:
-                            ax[2][0].plot(bordes_completos_x + [bordes_completos_x[0]],
-                                         bordes_completos_y + [bordes_completos_y[0]],
-                                         'k-', linewidth=2, alpha=0.9, label='Bordes')
-                    # Sombrear cada píxel según la fracción que aporta al municipio
-                    ax[2][0].imshow(pesos, cmap="Blues", alpha=0.45)
-                    ax[2][0].set_title(f"Cobertura por píxel (k={escala_a_usar})")
-                    ax[2][0].legend(loc='upper right', fontsize=8)
+                    ax[2][0].imshow(pesos, cmap="Blues", alpha=0.45, vmin=0, vmax=1)
+                    ax[2][0].plot(contorno_x, contorno_y, 'k-', linewidth=1.5, alpha=0.9)
+                    ax[2][0].set_title("Radianza ponderada por cobertura")
 
                 # Métricas ponderadas por área: invariantes al factor de escala
                 metricas = metricas_ponderadas(imagen_recortada, pesos)
@@ -238,7 +185,7 @@ class SatelliteProcessor:
                 print(f"Error durante el procesamiento de la imagen: {e}")
                 return None
 
-    def run(self, fechas: List[str], quadrant: str = "h08v07", show_plots: bool = False, factor_escala: int = None) -> pd.DataFrame:
+    def run(self, fechas: List[str], quadrant: str = "h08v07", show_plots: bool = False) -> pd.DataFrame:
         """
         Procesa múltiples fechas y retorna un dataframe con los resultados.
         
@@ -246,20 +193,16 @@ class SatelliteProcessor:
             fechas: Lista de fechas en formato dd-mm-yy
             quadrant: Cuadrante de la imagen (por defecto h08v07)
             show_plots: Si mostrar las visualizaciones de matplotlib
-            factor_escala: Factor de escala para aumentar la resolución de la imagen (por defecto usa el del constructor)
-            
+
         Returns:
             DataFrame con las mediciones de todas las fechas
         """
         results = []
-        
-        # Usar el factor de escala pasado como parámetro o el del constructor
-        escala_a_usar = factor_escala if factor_escala is not None else self.factor_escala
-        
+
         for fecha in fechas:
             print(f"Procesando fecha: {fecha}")
             try:
-                datos = self.get_measures(fecha, quadrant, show_plots=show_plots, factor_escala=escala_a_usar)
+                datos = self.get_measures(fecha, quadrant, show_plots=show_plots)
                 if datos:
                     results.append(datos)
                 else:
@@ -273,22 +216,18 @@ class SatelliteProcessor:
             
         return pd.DataFrame(results)
 
-    def recortar_imagen_solo(self, date_str: str, quadrant: str, factor_escala: int = None) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    def recorte_y_cobertura(self, date_str: str, quadrant: str) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """
-        Solo recorta la imagen sin hacer mediciones completas.
-        
+        Recorta la imagen y calcula la cobertura, sin agregar métricas.
+
         Args:
             date_str: Fecha en formato dd-mm-yy
             quadrant: Cuadrante de la imagen
-            factor_escala: Factor de escala para aumentar la resolución de la imagen (por defecto usa el del constructor)
-            
+
         Returns:
-            Tuple con (imagen_recortada, copia_imagen, nuevos_x, nuevos_y)
+            Tuple con (imagen_recortada, copia para visualización, cobertura por píxel)
         """
         year, day, date_obj = parse_date(date_str)
-        
-        # Usar el factor de escala pasado como parámetro o el del constructor
-        escala_a_usar = factor_escala if factor_escala is not None else self.factor_escala
 
         h5_url = find_file(year, day, quadrant)
         if not h5_url:
@@ -327,17 +266,20 @@ class SatelliteProcessor:
             copia_imagen = np.clip(image_matrix, 0, np.percentile(image_matrix, 99))
             
             try:
-                imagen_recortada, nuevos_x, nuevos_y = recortar_imagen(
-                    image_matrix, coordenadas_municipio, left_coord, escala_a_usar
+                poligono = poligono_en_pixeles(
+                    coordenadas_municipio, left_coord, image_matrix.shape
                 )
-                
+                pesos, fila_0, columna_0 = cobertura_exacta(poligono)
+                alto, ancho = pesos.shape
+                imagen_recortada = image_matrix[fila_0:fila_0 + alto, columna_0:columna_0 + ancho]
+
                 if imagen_recortada.size == 0:
                     print("La imagen recortada está vacía. Verifica las coordenadas del municipio.")
                     return None
-                    
-                copia_imagen = np.clip(imagen_recortada, 0, np.percentile(imagen_recortada, 99))
-                
-                return imagen_recortada, copia_imagen, nuevos_x, nuevos_y
+
+                copia_imagen = np.clip(imagen_recortada, 0, np.nanpercentile(imagen_recortada, 99))
+
+                return imagen_recortada, copia_imagen, pesos
                 
             except Exception as e:
                 print(f"Error durante el recorte de la imagen: {e}")

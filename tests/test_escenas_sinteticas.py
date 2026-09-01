@@ -8,19 +8,27 @@ agregación contra un número que no salió de este código.
 
 Las figuras se colocan en posiciones no enteras y giradas a propósito, para que
 la frontera caiga a mitad de píxel y el caso difícil quede ejercitado.
+
+El círculo se aproxima con un polígono de muchos lados, de modo que la tolerancia
+frente a πr² recoge tanto el error de la cobertura como el de esa discretización.
 """
 import numpy as np
 import pytest
 
+from shapely.geometry import Polygon
+
 from ntl.core.metricas import metricas_ponderadas
-from ntl.geometria.image_processor import pesos_municipio
+from ntl.geometria.cobertura import cobertura_exacta
 
 LIENZO = (42, 42)
 
 
-def _cobertura(xs, ys, k):
+def _cobertura(xs, ys):
     """Cobertura por píxel de un contorno dado en coordenadas de píxel."""
-    return pesos_municipio(LIENZO, np.asarray(xs) * k, np.asarray(ys) * k, k)
+    parcial, fila_0, columna_0 = cobertura_exacta(Polygon(np.column_stack([xs, ys])))
+    pesos = np.zeros(LIENZO)
+    pesos[fila_0:fila_0 + parcial.shape[0], columna_0:columna_0 + parcial.shape[1]] = parcial
+    return pesos
 
 
 def _circulo(cx, cy, r, n=4000):
@@ -48,22 +56,26 @@ FIGURAS = [
 class TestAreaContraFormaCerrada:
     @pytest.mark.parametrize("nombre,xs,ys,exacta", FIGURAS)
     def test_converge_a_la_formula(self, nombre, xs, ys, exacta):
-        area = _cobertura(xs, ys, 32).sum()
+        area = _cobertura(xs, ys).sum()
         assert area == pytest.approx(exacta, rel=1e-3)
 
     @pytest.mark.parametrize("nombre,xs,ys,exacta", FIGURAS)
-    def test_refinar_la_malla_reduce_el_error(self, nombre, xs, ys, exacta):
-        grueso = abs(_cobertura(xs, ys, 1).sum() - exacta)
-        fino = abs(_cobertura(xs, ys, 32).sum() - exacta)
-        assert fino < grueso
+    def test_la_precision_no_depende_de_la_posicion(self, nombre, xs, ys, exacta):
+        """Desplazar la figura una fracción de píxel no debe cambiar el área.
 
-    def test_una_figura_pequena_es_el_caso_dificil(self):
-        """El sesgo escala con perímetro/área: la figura chica sufre más."""
+        Con una asignación binaria el resultado salta según dónde caiga la
+        frontera respecto a la retícula; con la intersección no.
+        """
+        for dx, dy in ((0.0, 0.0), (0.33, 0.17), (0.5, 0.5), (0.71, 0.94)):
+            area = _cobertura(np.asarray(xs) + dx, np.asarray(ys) + dy).sum()
+            assert area == pytest.approx(exacta, rel=1e-6), f"desplazada ({dx}, {dy})"
+
+    def test_una_figura_pequena_no_es_mas_dificil(self):
+        """El área de la frontera deja de importar cuando se calcula exacta."""
         _, xs_g, ys_g, ex_g = FIGURAS[0]     # r = 7.3
-        _, xs_p, ys_p, ex_p = FIGURAS[1]     # r = 3.1
-        err_grande = abs(_cobertura(xs_g, ys_g, 1).sum() - ex_g) / ex_g
-        err_chica = abs(_cobertura(xs_p, ys_p, 1).sum() - ex_p) / ex_p
-        assert err_chica > err_grande
+        _, xs_p, ys_p, ex_p = FIGURAS[1]     # r = 3.1, razón perímetro/área mucho mayor
+        assert _cobertura(xs_g, ys_g).sum() == pytest.approx(ex_g, rel=1e-6)
+        assert _cobertura(xs_p, ys_p).sum() == pytest.approx(ex_p, rel=1e-6)
 
 
 class TestCampoConstante:
@@ -74,7 +86,7 @@ class TestCampoConstante:
     @pytest.fixture
     def metricas(self):
         xs, ys = _circulo(20.37, 20.61, 7.3)
-        pesos = _cobertura(xs, ys, 16)
+        pesos = _cobertura(xs, ys)
         imagen = np.full(LIENZO, self.C)
         return metricas_ponderadas(imagen[pesos > 0], pesos[pesos > 0])
 
@@ -99,6 +111,6 @@ class TestCampoConstante:
         xs, ys = _circulo(20.37, 20.61, 7.3)
         imagen = np.full(LIENZO, self.C)
         for k in (1, 4, 16):
-            pesos = _cobertura(xs, ys, k)
+            pesos = _cobertura(xs, ys)
             m = metricas_ponderadas(imagen[pesos > 0], pesos[pesos > 0])
             assert m["Media_de_radianza"] == pytest.approx(self.C, abs=1e-9)

@@ -1,21 +1,21 @@
 """
-Cobertura exacta de un municipio sobre la retícula, por intersección geométrica.
+Cobertura de un municipio sobre la retícula, por intersección geométrica.
 
-`pesos_municipio` aproxima esta misma cantidad subdividiendo cada píxel en k²
-subpíxeles y contando los que caen dentro. Es una aproximación con dos cabos
-sueltos: el factor k, que hay que elegir, y el peso que se asigna al trazo del
-borde, que a k=32 todavía mueve el resultado entre 0.5% y 0.9%.
+Tras llevar el polígono a coordenadas de píxel, el píxel de índices (j, k) es el
+cuadrado unitario [j, j+1] x [k, k+1] y la pertenencia deja de ser una decisión
+binaria: es el área de la intersección entre el polígono y ese cuadrado.
 
-Aquí no hay ninguno de los dos. El área que el polígono cubre de cada celda se
-calcula analíticamente, y cuesta lo mismo que la aproximación porque solo se
-paga una vez por municipio. Es también la definición contra la que se validan
-`pesos_municipio` y la tabla precalculada.
+Decidir cada píxel de frontera entero —aceptarlo o descartarlo— costaba entre el
+7% y el 31% del territorio según la forma del municipio, porque el anillo que la
+frontera atraviesa crece con el perímetro mientras el interior crece con el área.
 """
 from typing import Tuple
 
 import numpy as np
 from shapely.geometry import Polygon, box
 from shapely.prepared import prep
+
+from ..core.metricas import metricas_ponderadas as _metricas_nucleo
 
 GRADOS_POR_CUADRANTE = 10.0
 
@@ -63,3 +63,24 @@ def cobertura_exacta(poly_px: Polygon) -> Tuple[np.ndarray, int, int]:
             )
 
     return pesos, fila_0, columna_0
+
+
+def metricas_ponderadas(imagen_recortada: np.ndarray, pesos: np.ndarray) -> dict:
+    """
+    Métricas del municipio ponderadas por el área que cubre de cada píxel.
+
+    Envoltura sobre `core.metricas.metricas_ponderadas` para el caso en que la
+    cobertura viene como matriz alineada con el recorte. El cálculo vive en core
+    porque `radianza` lo necesita igual, sobre las coberturas precalculadas.
+
+    Args:
+        imagen_recortada: Recorte en resolución original
+        pesos: Matriz de pesos con la misma forma, en [0,1]
+
+    Returns:
+        Diccionario con las métricas, o None si el municipio quedó vacío
+    """
+    dentro = pesos > 0
+    if not dentro.any():
+        return None
+    return _metricas_nucleo(imagen_recortada[dentro], pesos[dentro])
