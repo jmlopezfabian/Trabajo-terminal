@@ -66,6 +66,17 @@ def find_image_path(hdf_file) -> str:
 
     return IMAGE_PATH
 _DATA_ROOT = resources.files("vnp46a1_data")
+
+# Polígonos municipales: entrada de vnp46a1.geometria, que los convierte en
+# coberturas por píxel.
+RUTA_MUNICIPIOS = str(_DATA_ROOT.joinpath("limite-de-las-alcaldias.json"))
+
+# Coberturas ya calculadas: entrada de vnp46a1.radianza, que las aplica a cada
+# imagen diaria sin recalcular geometría.
 PIXELES_MUNICIPIOS = str(_DATA_ROOT.joinpath("municipios_coordenadas_pixeles.json"))
+
 TOKEN = os.getenv("NASA_API_TOKEN")
 HEADERS = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
+
+# Tamaño de bloque para la descarga bloqueante
+CHUNK_SIZE = 8192

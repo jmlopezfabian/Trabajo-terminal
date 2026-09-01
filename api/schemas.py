@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from satellite_async.models import MedicionResultado
+from vnp46a1.core.models import MedicionResultado
 
 
 class JobRequest(BaseModel):

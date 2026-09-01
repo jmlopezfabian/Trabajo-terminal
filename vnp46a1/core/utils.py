@@ -2,19 +2,30 @@ import json
 import re
 import numpy as np
 from datetime import datetime
-from typing import Tuple, List, Optional
-from .models import CoordenadasPixeles
+from typing import List, Optional, Tuple
+
 from .config import RUTA_MUNICIPIOS
+from .models import CoordenadasPixeles
+
 
 def normalize_municipio(municipio: str) -> str:
     """Normaliza el nombre del municipio removiendo acentos"""
     return municipio.lower().replace("á", "a").replace("é", "e")\
         .replace("í", "i").replace("ó", "o").replace("ú", "u")
 
-def parse_date(date_str: str) -> Tuple[int, int, datetime.date]:
-    """Parsea una fecha en formato dd-mm-yy y retorna año, día del año y objeto date"""
+
+def parse_date(date_str: str) -> Tuple[int, str, datetime.date]:
+    """
+    Parsea una fecha en formato dd-mm-yy y retorna año, día del año y objeto date.
+
+    El día se devuelve con tres dígitos porque así lo publica el archivo de
+    LAADS; las dos versiones del procesamiento diferían en esto y solo una
+    construía la URL en el formato canónico.
+    """
     date = datetime.strptime(date_str, "%d-%m-%y")
-    return date.year, date.timetuple().tm_yday, date.date()
+    day_of_year = date.timetuple().tm_yday
+    return date.year, f"{day_of_year:03d}", date.date()
+
 
 def load_coord_data(municipio: str, path: str) -> CoordenadasPixeles:
     """Carga las coordenadas de píxeles de un municipio desde un archivo JSON"""
@@ -22,21 +33,23 @@ def load_coord_data(municipio: str, path: str) -> CoordenadasPixeles:
         data = json.load(f)
     return CoordenadasPixeles(**data[municipio])
 
+
 def extraer_coordenadas(nombre_delegacion: str) -> Optional[np.ndarray]:
-    """Extrae las coordenadas de un municipio desde el archivo de límites"""
+    """Extrae las coordenadas del polígono de un municipio desde el archivo de límites"""
     try:
         with open(RUTA_MUNICIPIOS, "r") as file:
             datos = json.load(file)
-        
+
         for data in datos["features"]:
             if data["properties"]["NOMGEO"] == nombre_delegacion:
                 return np.array(data["geometry"]["coordinates"][0])
-        
+
         print(f"No se encontraron coordenadas para la delegación: {nombre_delegacion}")
         return None
     except Exception as e:
         print(f"Error al extraer coordenadas: {e}")
         return None
+
 
 def left_right_coords(hdf_file) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """Extrae las coordenadas de la esquina superior izquierda e inferior derecha del archivo HDF"""
@@ -65,9 +78,11 @@ def left_right_coords(hdf_file) -> Tuple[Optional[Tuple[float, float]], Optional
         print(f"Error al extraer coordenadas del archivo HDF: {e}")
         return None, None
 
+
 def distancia_puntos(x: Tuple[float, float], y: Tuple[float, float]) -> float:
     """Calcula la distancia euclidiana entre dos puntos"""
     return np.sqrt((x[0]-y[0])**2 + (x[1]-y[1])**2)
+
 
 def polygon_centroid(vertices: List[Tuple[float, float]]) -> Tuple[float, float]:
     """Calcula el centroide de un polígono"""

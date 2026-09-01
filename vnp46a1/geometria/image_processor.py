@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from typing import Tuple, List
-from .utils import distancia_puntos
+from ..core.utils import distancia_puntos
 
 def aumentar_imagen(image_matrix: np.ndarray, factor_escala: int) -> np.ndarray:
     """Aumenta el tamaño de una imagen por un factor de escala"""

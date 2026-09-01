@@ -1,4 +1,4 @@
-"""Unit tests for satellite_sync utils (pure functions and I/O with mocks)."""
+"""Unit tests for vnp46a1 utils (pure functions and I/O with mocks)."""
 import json
 from pathlib import Path
 from unittest.mock import patch, mock_open, MagicMock
@@ -6,7 +6,7 @@ from unittest.mock import patch, mock_open, MagicMock
 import numpy as np
 import pytest
 
-from satellite_sync.utils import (
+from vnp46a1.core.utils import (
     normalize_municipio,
     parse_date,
     distancia_puntos,
@@ -34,13 +34,24 @@ class TestParseDate:
     def test_parse_valid_date(self):
         year, day, date_obj = parse_date("01-01-24")
         assert year == 2024
-        assert day == 1
+        assert day == "001"
         assert date_obj.year == 2024 and date_obj.month == 1 and date_obj.day == 1
 
     def test_parse_mid_year(self):
         year, day, date_obj = parse_date("15-06-23")
         assert year == 2023
+        assert day == "166"
         assert date_obj.month == 6 and date_obj.day == 15
+
+    def test_day_is_zero_padded_to_three_digits(self):
+        """El archivo de LAADS publica el día con tres dígitos.
+
+        Las dos versiones del procesamiento diferían aquí: una devolvía el
+        entero y construía URLs como /2024/1/ en vez de /2024/001/.
+        """
+        for fecha in ("01-01-24", "05-01-24", "31-12-24"):
+            _, day, _ = parse_date(fecha)
+            assert isinstance(day, str) and len(day) == 3
 
     def test_invalid_format_raises(self):
         with pytest.raises(ValueError):
@@ -80,19 +91,19 @@ class TestPolygonCentroid:
 
 class TestExtraerCoordenadas:
     def test_returns_coordinates_when_found(self, municipios_json_path):
-        with patch("satellite_sync.utils.RUTA_MUNICIPIOS", municipios_json_path):
+        with patch("vnp46a1.core.utils.RUTA_MUNICIPIOS", municipios_json_path):
             coords = extraer_coordenadas("Iztapalapa")
         assert coords is not None
         assert isinstance(coords, np.ndarray)
         assert len(coords) > 0
 
     def test_returns_none_when_not_found(self, municipios_json_path):
-        with patch("satellite_sync.utils.RUTA_MUNICIPIOS", municipios_json_path):
+        with patch("vnp46a1.core.utils.RUTA_MUNICIPIOS", municipios_json_path):
             coords = extraer_coordenadas("MunicipioInexistente")
         assert coords is None
 
     def test_returns_none_on_invalid_json(self):
-        with patch("satellite_sync.utils.RUTA_MUNICIPIOS", "/nonexistent/path.json"):
+        with patch("vnp46a1.core.utils.RUTA_MUNICIPIOS", "/nonexistent/path.json"):
             with patch("builtins.open", mock_open(read_data="invalid {")):
                 coords = extraer_coordenadas("Iztapalapa")
         assert coords is None

@@ -14,8 +14,14 @@ class BboxRecorte(BaseModel):
 
 class MedicionResultado(BaseModel):
     Fecha: date = Field(..., description="Date of the measurement")
-    Municipio: str = Field(..., description="Name of the municipality")
-    Cantidad_de_pixeles: int = Field(..., description="Number of pixels")
+    Municipio: Optional[str] = Field(None, description="Name of the municipality")
+    Cantidad_de_pixeles: float = Field(
+        ...,
+        description=(
+            "Area of the municipality in original pixels: the sum of the per-pixel "
+            "coverage weights. Invariant to the scale factor, unlike a subpixel count."
+        ),
+    )
     Suma_de_radianza: float = Field(..., description="Sum of the radiance")
     Media_de_radianza: float = Field(..., description="Mean of the radiance")
     Desviacion_estandar_de_radianza: float = Field(..., description="Standard deviation of the radiance")

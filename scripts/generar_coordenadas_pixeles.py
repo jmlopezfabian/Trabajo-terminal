@@ -24,9 +24,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from satellite_sync.config import RUTA_MUNICIPIOS
-from satellite_sync.image_processor import completar_bordes, recortar_imagen, get_pixeles
-from satellite_sync.utils import extraer_coordenadas, normalize_municipio
+from vnp46a1.core.config import RUTA_MUNICIPIOS
+from vnp46a1.geometria.image_processor import completar_bordes, recortar_imagen, get_pixeles
+from vnp46a1.core.utils import extraer_coordenadas, normalize_municipio
 
 # Retícula del producto VNP46A1 a 500 m: 2400x2400 píxeles por cuadrante de 10°x10°
 FORMA_CUADRANTE = (2400, 2400)

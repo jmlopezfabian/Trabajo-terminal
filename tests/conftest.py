@@ -1,5 +1,5 @@
 """
-Shared pytest configuration and fixtures for satellite_sync and satellite_async tests.
+Shared pytest configuration and fixtures for los tres subpaquetes tests.
 Adds project root to sys.path so modules can be imported when running pytest from repo root.
 """
 import sys

@@ -1,9 +1,9 @@
-"""Integration tests for satellite_async processing with mocked HDF5."""
+"""Integration tests for vnp46a1 processing with mocked HDF5."""
 from datetime import date
 
 import pytest
 
-from satellite_async.processing import extract_radiance_matrix, process_image
+from vnp46a1.radianza.extraccion import extract_radiance_matrix, process_image
 
 
 class TestProcessImage:

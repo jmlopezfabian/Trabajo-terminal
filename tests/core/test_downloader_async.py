@@ -1,9 +1,9 @@
-"""Tests for satellite_async downloader with mocked HTTP."""
+"""Tests for vnp46a1 downloader with mocked HTTP."""
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from satellite_async.downloader import find_file, download_file
+from vnp46a1.core.downloader import find_file_async, download_file_async
 
 
 def _make_resp(status=200, text="", content_bytes=None):
@@ -25,7 +25,7 @@ class TestFindFileAsync:
         ctx.__aenter__ = AsyncMock(return_value=_make_resp(200, sample_directory_html))
         ctx.__aexit__ = AsyncMock(return_value=None)
         session.get = MagicMock(return_value=ctx)
-        url = await find_file(session, 2024, 1, "h08v07")
+        url = await find_file_async(session, 2024, 1, "h08v07")
         assert url is not None
         assert "h08v07" in url
         assert url.endswith(".h5")
@@ -36,7 +36,7 @@ class TestFindFileAsync:
         ctx.__aenter__ = AsyncMock(return_value=_make_resp(404, ""))
         ctx.__aexit__ = AsyncMock(return_value=None)
         session.get = MagicMock(return_value=ctx)
-        url = await find_file(session, 2024, 1, "h08v07")
+        url = await find_file_async(session, 2024, 1, "h08v07")
         assert url is None
 
     async def test_returns_none_when_no_matching_link(self):
@@ -47,7 +47,7 @@ class TestFindFileAsync:
         )
         ctx.__aexit__ = AsyncMock(return_value=None)
         session.get = MagicMock(return_value=ctx)
-        url = await find_file(session, 2024, 1, "h99v99")
+        url = await find_file_async(session, 2024, 1, "h99v99")
         assert url is None
 
 
@@ -61,7 +61,7 @@ class TestDownloadFileAsync:
         ctx.__aenter__ = AsyncMock(return_value=resp)
         ctx.__aexit__ = AsyncMock(return_value=None)
         session.get = MagicMock(return_value=ctx)
-        result = await download_file(session, "http://example.com/file.h5", path)
+        result = await download_file_async(session, "http://example.com/file.h5", path)
         assert result == path
         assert (tmp_path / "out.h5").read_bytes() == b"binary content here"
 
@@ -72,5 +72,5 @@ class TestDownloadFileAsync:
         ctx.__aenter__ = AsyncMock(return_value=_make_resp(404, ""))
         ctx.__aexit__ = AsyncMock(return_value=None)
         session.get = MagicMock(return_value=ctx)
-        result = await download_file(session, "http://example.com/file.h5", path)
+        result = await download_file_async(session, "http://example.com/file.h5", path)
         assert result is None
