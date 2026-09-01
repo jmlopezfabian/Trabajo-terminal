@@ -31,7 +31,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ntl.core.config import RUTA_MUNICIPIOS
 from ntl.geometria.image_processor import pesos_municipio, recortar
-from ntl.core.utils import extraer_coordenadas, normalize_municipio
+from ntl.core.utils import (
+    cuadrante_de_coordenadas,
+    esquina_superior_izquierda,
+    extraer_coordenadas,
+    normalize_municipio,
+)
 
 # Retícula del producto VNP46A1 a 500 m: 2400x2400 píxeles por cuadrante de 10°x10°
 FORMA_CUADRANTE = (2400, 2400)
@@ -41,13 +46,6 @@ SALIDA_POR_DEFECTO = os.path.join(
     "ntl_data",
     "municipios_coordenadas_pixeles.json",
 )
-
-
-def esquina_superior_izquierda(cuadrante: str) -> tuple[float, float]:
-    """Longitud y latitud de la esquina superior izquierda de un cuadrante hHHvVV."""
-    h = int(cuadrante[1:3])
-    v = int(cuadrante[4:6])
-    return (-180.0 + 10.0 * h, 90.0 - 10.0 * v)
 
 
 def cobertura_de_municipio(nombre: str, cuadrante: str, factor: int) -> list[list]:
@@ -108,12 +106,20 @@ def main() -> int:
         nombre = feature["properties"]["NOMGEO"]
         clave = normalize_municipio(nombre)
 
-        if clave not in previo:
-            print(f"AVISO: {nombre} no está en el archivo previo; se omite "
-                  f"(no se conoce su cuadrante)")
+        # El cuadrante se deduce del propio polígono. Antes se heredaba del
+        # archivo previo, así que un municipio nuevo se omitía en silencio y la
+        # tabla no podía crecer sin editarla a mano.
+        try:
+            cuadrante = cuadrante_de_coordenadas(extraer_coordenadas(nombre))
+        except ValueError as e:
+            print(f"AVISO: {nombre} se omite: {e}")
             continue
 
-        cuadrante = previo[clave]["cuadrante"]
+        heredado = previo.get(clave, {}).get("cuadrante")
+        if heredado and heredado != cuadrante:
+            print(f"  AVISO: {nombre} estaba en {heredado} y sus coordenadas "
+                  f"caen en {cuadrante}")
+
         pesos = cobertura_de_municipio(nombre, cuadrante, args.factor)
         resultado[clave] = {
             "nombre": clave,
@@ -123,7 +129,8 @@ def main() -> int:
 
         area = sum(w for _, _, w in pesos)
         frontera = sum(1 for _, _, w in pesos if w < 0.999)
-        entradas_previas = previo[clave].get("pesos") or previo[clave].get("coordenadas_pixeles", [])
+        anterior = previo.get(clave, {})
+        entradas_previas = anterior.get("pesos") or anterior.get("coordenadas_pixeles", [])
         area_previa = (
             sum(p[2] for p in entradas_previas) if entradas_previas and len(entradas_previas[0]) == 3
             else len(entradas_previas)
