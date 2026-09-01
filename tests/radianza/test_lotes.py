@@ -1,11 +1,11 @@
-"""Integration tests for vnp46a1 SatelliteImagesAsync with mocked download/processing."""
+"""Integration tests for ntl SatelliteImagesAsync with mocked download/processing."""
 from datetime import date
 from unittest.mock import patch, AsyncMock, MagicMock
 
 import pandas as pd
 import pytest
 
-from vnp46a1.radianza.lotes import SatelliteImagesAsync
+from ntl.radianza.lotes import SatelliteImagesAsync
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def mock_coord_data():
 @pytest.mark.asyncio
 class TestSatelliteImagesAsyncRun:
     async def test_run_returns_dataframe_with_results(self, mock_coord_data):
-        with patch("vnp46a1.radianza.lotes.load_coord_data", return_value=mock_coord_data):
+        with patch("ntl.radianza.lotes.load_coord_data", return_value=mock_coord_data):
             sat = SatelliteImagesAsync("Iztapalapa")
         fake_results = [
             {
@@ -50,7 +50,7 @@ class TestSatelliteImagesAsyncRun:
         assert "Media_de_radianza" in df.columns
 
     async def test_run_aggregates_multiple_dates(self, mock_coord_data):
-        with patch("vnp46a1.radianza.lotes.load_coord_data", return_value=mock_coord_data):
+        with patch("ntl.radianza.lotes.load_coord_data", return_value=mock_coord_data):
             sat = SatelliteImagesAsync("Iztapalapa")
         with patch.object(
             sat,
@@ -65,7 +65,7 @@ class TestSatelliteImagesAsyncRun:
         assert len(df) == 2
 
     async def test_run_returns_empty_dataframe_when_no_results(self, mock_coord_data):
-        with patch("vnp46a1.radianza.lotes.load_coord_data", return_value=mock_coord_data):
+        with patch("ntl.radianza.lotes.load_coord_data", return_value=mock_coord_data):
             sat = SatelliteImagesAsync("Iztapalapa")
         with patch.object(
             sat,

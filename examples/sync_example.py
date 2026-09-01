@@ -1,4 +1,4 @@
-from vnp46a1.geometria import SatelliteProcessor
+from ntl.geometria import SatelliteProcessor
 
 
 def main() -> None:

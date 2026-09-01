@@ -21,9 +21,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import aiohttp
 import h5py
 
-from vnp46a1.core.config import find_image_path
-from vnp46a1.core.downloader import download_file_async, find_file_async
-from vnp46a1.core.utils import parse_date
+from ntl.core.config import find_image_path
+from ntl.core.downloader import download_file_async, find_file_async
+from ntl.core.utils import parse_date
 
 # Columnas H06..H09 (de izquierda a derecha) x filas V06..V07 (de arriba a abajo,
 # ya que v crece hacia el sur en la cuadrícula sinusoidal de VIIRS/MODIS).

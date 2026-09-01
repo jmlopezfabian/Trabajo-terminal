@@ -10,15 +10,16 @@ from pathlib import Path
 
 import pytest
 
-from vnp46a1.core import config
+from ntl.core import config
 
 
 def _reload_config(monkeypatch, temp_dir=None):
-    """Re-import config with VNP46A1_TEMP_DIR set (or unset)."""
+    """Re-import config with NTL_TEMP_DIR set (or unset)."""
     if temp_dir is None:
+        monkeypatch.delenv("NTL_TEMP_DIR", raising=False)
         monkeypatch.delenv("VNP46A1_TEMP_DIR", raising=False)
     else:
-        monkeypatch.setenv("VNP46A1_TEMP_DIR", str(temp_dir))
+        monkeypatch.setenv("NTL_TEMP_DIR", str(temp_dir))
     return importlib.reload(config)
 
 
@@ -71,7 +72,7 @@ def test_download_and_cleanup_agree_on_the_directory(monkeypatch, tmp_path):
     target = tmp_path / "staging"
     _reload_config(monkeypatch, target)
 
-    from vnp46a1.radianza import lotes as sa
+    from ntl.radianza import lotes as sa
 
     importlib.reload(sa)
 
@@ -93,11 +94,11 @@ def test_no_relative_parent_paths_remain():
     padre, no solo "../temp": el mismo fallo reapareció en "../data" y la
     versión anterior de esta prueba no lo veía.
     """
-    import vnp46a1
+    import ntl
 
     # rglob, no glob: la mitad de geometría vivía en otro paquete y por eso
     # conservó el "../temp" durante todo el tiempo que este test estuvo en verde.
-    source_dir = Path(vnp46a1.__file__).parent
+    source_dir = Path(ntl.__file__).parent
     pattern = re.compile(r"""=\s*f?["'][^"']*\.\./""")
     offenders = [
         str(path.relative_to(source_dir))
@@ -105,3 +106,18 @@ def test_no_relative_parent_paths_remain():
         if pattern.search(path.read_text())
     ]
     assert offenders == []
+
+
+def test_acepta_el_nombre_anterior_de_la_variable(monkeypatch, tmp_path):
+    """Un despliegue con VNP46A1_TEMP_DIR configurado no debe romperse."""
+    monkeypatch.delenv("NTL_TEMP_DIR", raising=False)
+    monkeypatch.setenv("VNP46A1_TEMP_DIR", str(tmp_path / "antiguo"))
+    cfg = importlib.reload(config)
+    assert cfg.TEMP_DIR == (tmp_path / "antiguo").resolve()
+
+
+def test_el_nombre_nuevo_tiene_precedencia(monkeypatch, tmp_path):
+    monkeypatch.setenv("VNP46A1_TEMP_DIR", str(tmp_path / "antiguo"))
+    monkeypatch.setenv("NTL_TEMP_DIR", str(tmp_path / "nuevo"))
+    cfg = importlib.reload(config)
+    assert cfg.TEMP_DIR == (tmp_path / "nuevo").resolve()

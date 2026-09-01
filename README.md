@@ -5,15 +5,20 @@ Incluye una **API asíncrona con FastAPI** para lanzar jobs de procesamiento en 
 
 ### Componentes principales
 
-El paquete `vnp46a1/` está dividido por responsabilidad, no por modelo de concurrencia:
+El paquete `ntl/` está dividido por responsabilidad, no por modelo de concurrencia:
 
-- `vnp46a1/core/`: configuración, modelos, utilidades y descargas.
-- `vnp46a1/geometria/`: polígono municipal → cobertura por píxel. Corre **una vez por
+- `ntl/core/`: configuración, modelos, utilidades y descargas.
+- `ntl/geometria/`: polígono municipal → cobertura por píxel. Corre **una vez por
   municipio**; su resultado es estático mientras no cambie la delimitación oficial.
-- `vnp46a1/radianza/`: cobertura → métricas de luminosidad. Corre **todos los días**
+- `ntl/radianza/`: cobertura → métricas de luminosidad. Corre **todos los días**
   sobre cada imagen, descargando en paralelo y agrupando por cuadrante.
 - `api/`: aplicación FastAPI que expone el procesamiento como servicio HTTP.
-- `vnp46a1_data/`: datos auxiliares (coordenadas de municipios, límites geográficos).
+- `ntl_data/`: datos auxiliares (tabla de cobertura, límites geográficos).
+
+El paquete se llama `ntl` por *nighttime lights*, el acrónimo con el que la literatura
+nombra el fenómeno y que el reporte técnico ya usa como notación ($NTL_{i,j}$). No lleva
+el identificador del producto de la NASA para no atarse a él: VNP46A1 es hoy la fuente,
+pero el procesamiento no depende de que lo siga siendo.
 
 `geometria` produce lo que `radianza` consume. La distinción entre síncrono y asíncrono
 vive únicamente en `core/downloader.py`, donde las funciones asíncronas llevan el sufijo
@@ -141,11 +146,11 @@ aceptar o descartar cada celda de frontera, y como esas celdas están cubiertas
 aproximadamente por la mitad, descartarlas subestimaba el área entre 7% y 31% según la
 forma del municipio.
 
-La tabla de cobertura (`vnp46a1_data/municipios_coordenadas_pixeles.json`) se regenera
+La tabla de cobertura (`ntl_data/municipios_coordenadas_pixeles.json`) se regenera
 con `python scripts/generar_coordenadas_pixeles.py`; solo hace falta si cambian los
 polígonos municipales.
 
-La API usa `vnp46a1.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
+La API usa `ntl.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
 
 ---
 

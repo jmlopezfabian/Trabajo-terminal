@@ -1,7 +1,7 @@
 import asyncio
 import pandas as pd
 
-from vnp46a1.radianza.lotes import SatelliteImagesAsync
+from ntl.radianza.lotes import SatelliteImagesAsync
 
 
 async def main() -> None:
