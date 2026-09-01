@@ -4,7 +4,7 @@ import os
 import glob
 from typing import Callable
 
-from ..core.config import PIXELES_MUNICIPIOS, TEMP_DIR, temp_path
+from ..core.config import PIXELES_MUNICIPIOS, TEMP_DIR, data_path, temp_path
 from ..core.utils import normalize_municipio, parse_date, load_coord_data
 from ..core.downloader import find_file_async, download_file_async
 from .extraccion import process_image
@@ -34,14 +34,11 @@ def cleanup_temp_files():
 def save_progress(df, municipio, chunk_number=None):
     """Guarda el progreso actual en Parquet"""
     try:
-        # Crear directorio si no existe
-        os.makedirs("../data", exist_ok=True)
-        
         # Nombre del archivo con información del chunk
         if chunk_number is not None:
-            filename = f"../data/{municipio}_progress_chunk_{chunk_number}.parquet"
+            filename = str(data_path(f"{municipio}_progress_chunk_{chunk_number}.parquet"))
         else:
-            filename = f"../data/{municipio}_progress.parquet"
+            filename = str(data_path(f"{municipio}_progress.parquet"))
         
         # Guardar Parquet
         df.to_parquet(filename, index=False)
