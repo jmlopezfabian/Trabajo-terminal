@@ -27,7 +27,7 @@ pd.set_option('display.max_rows', None)
 
 class SatelliteProcessor:
     """
-    Clase principal para procesar imágenes satelitales del producto VNP46A1.
+    Clase principal para procesar imágenes satelitales del producto VNP46A2.
     """
     
     def __init__(self, municipio: str, factor_escala: int = 1):

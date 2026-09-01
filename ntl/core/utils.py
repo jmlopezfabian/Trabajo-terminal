@@ -89,7 +89,7 @@ def esquina_superior_izquierda(cuadrante: str) -> Tuple[float, float]:
     """
     Longitud y latitud de la esquina superior izquierda de un cuadrante hHHvVV.
 
-    VNP46A1 se publica sobre una retícula lat/lon lineal (``Projection=
+    Black Marble se publica sobre una retícula lat/lon lineal (``Projection=
     HE5_GCTP_GEO``), no sinusoidal como MODIS, así que el origen de cada
     cuadrante se deriva de su identificador sin necesidad de abrir el archivo.
     El grid está anclado a la esquina, no al centro del píxel

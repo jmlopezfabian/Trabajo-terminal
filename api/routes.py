@@ -1,4 +1,4 @@
-"""FastAPI routes for VNP46A1 satellite processing API."""
+"""FastAPI routes for the Black Marble (VNP46A2) processing API."""
 import asyncio
 import json
 import uuid

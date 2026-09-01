@@ -2,7 +2,7 @@
 Regenera la tabla de cobertura por municipio.
 
 Este archivo (``ntl_data/municipios_coordenadas_pixeles.json``) precalcula,
-una sola vez por municipio, qué fracción de cada píxel de la retícula VNP46A1
+una sola vez por municipio, qué fracción de cada píxel de la retícula de Black Marble
 cae dentro de su límite geográfico. El pipeline de radianza lo lee en cada
 ejecución diaria para saltarse por completo la etapa de transformación
 geométrica.
@@ -39,7 +39,7 @@ from ntl.core.utils import (
     normalize_municipio,
 )
 
-# Retícula del producto VNP46A1 a 500 m: 2400x2400 píxeles por cuadrante de 10°x10°
+# Retícula de Black Marble a 500 m: 2400x2400 píxeles por cuadrante de 10°x10°
 FORMA_CUADRANTE = (2400, 2400)
 
 SALIDA_POR_DEFECTO = os.path.join(

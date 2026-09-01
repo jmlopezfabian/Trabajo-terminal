@@ -12,7 +12,7 @@ scripts/ y no en tests/. Las pruebas que sí corren en CI validan el rasterizado
 (oracle de Shapely) y la partición de fronteras, que no dependen de la imagen.
 
 Uso:
-    python scripts/sensibilidad_desplazamiento.py ruta/al/VNP46A1.h5 [--cuadrante h08v07]
+    python scripts/sensibilidad_desplazamiento.py ruta/al/VNP46A2.h5 [--cuadrante h08v07]
 """
 import argparse
 import json
@@ -49,7 +49,7 @@ def metricas_desplazadas(imagen: np.ndarray, pesos: list, dx: int, dy: int) -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("h5", help="Archivo VNP46A1 descargado")
+    parser.add_argument("h5", help="Archivo VNP46A2 descargado")
     parser.add_argument("--cuadrante", default=None,
                         help="Solo los municipios de este cuadrante (por defecto, "
                              "el que se deduce del nombre del archivo)")

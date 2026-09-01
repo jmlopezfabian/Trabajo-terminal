@@ -1,4 +1,4 @@
-"""FastAPI application entry point for VNP46A1 Satellite API."""
+"""FastAPI application entry point for the Black Marble processing API."""
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -8,9 +8,9 @@ from fastapi.staticfiles import StaticFiles
 from api.routes import router
 
 app = FastAPI(
-    title="VNP46A1 Satellite API",
+    title="Black Marble NTL API",
     version="1.0.0",
-    description="Async API for satellite image processing (VNP46A1) with background jobs.",
+    description="Async API for nighttime lights processing (VNP46A2) with background jobs.",
 )
 app.include_router(router)
 

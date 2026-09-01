@@ -1,1 +1,1 @@
-# API package for VNP46A1 Satellite processing
+# API package for Black Marble (VNP46A2) processing
