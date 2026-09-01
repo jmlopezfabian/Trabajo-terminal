@@ -111,10 +111,9 @@
 
     <p><strong>VNP46A2</strong> entrega la misma escena tras corregir la reflectancia bidireccional lunar y la atmósfera, acompañada de <code>Mandatory_Quality_Flag</code>, que califica cada píxel individualmente. En la colección 2.0, el valor 0 indica alta calidad y los valores 1 a 5 distintas causas de descarte —eclipse lunar, aurora, destello especular—, mientras que 255 señala ausencia de recuperación.</p>
 
-    <p>El procesamiento descrito en este trabajo utiliza <strong>VNP46A2</strong>. La sección 6 cuantifica la diferencia. Las rutas de los datos de radianza dentro del archivo HDF5 son, respectivamente:</p>
+    <p>El procesamiento descrito en este trabajo utiliza <strong>VNP46A2</strong> de forma exclusiva; VNP46A1 no se admite como alternativa configurable, porque un archivo sin banderas de calidad produce series que aparentan validez sin tenerla. La sección 6 cuantifica la diferencia. La ruta de los datos de radianza dentro del archivo HDF5 es:</p>
 
-    <pre style="background:#f5f5f0;border:1px solid #ddd;border-radius:4px;padding:0.75rem 1rem;font-size:0.82rem;overflow-x:auto"><code>VNP46A2   HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/DNB_BRDF-Corrected_NTL
-VNP46A1   HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m</code></pre>
+    <pre style="background:#f5f5f0;border:1px solid #ddd;border-radius:4px;padding:0.75rem 1rem;font-size:0.82rem;overflow-x:auto"><code>HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/DNB_BRDF-Corrected_NTL</code></pre>
 
     <p>Cada matriz tiene dimensiones $2400 \times 2400$ píxeles, donde el elemento $I_{j,k}$ es la radianza en la posición $(j, k)$ del cuadrante, expresada en nW·cm⁻²·sr⁻¹. Los valores enteros requieren aplicar los atributos <code>scale_factor</code> y <code>add_offset</code> que el propio conjunto de datos declara, y descartar los que coincidan con <code>_FillValue</code> o queden fuera del intervalo <code>valid_min</code>–<code>valid_max</code>: omitir esa conversión deja la serie en cuentas digitales, y omitir el descarte introduce el valor de relleno en los agregados como si fuera luminosidad. El nombre de cada archivo sigue la nomenclatura:</p>
 
@@ -559,7 +558,7 @@ VNP46A1   HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m</cod
 
     <h3 class="subsection" id="brdf">Producto corregido y banderas de calidad</h3>
 
-    <p>VNP46A2 corrige la reflectancia bidireccional lunar y la atenuación atmosférica, y acompaña cada píxel de <code>Mandatory_Quality_Flag</code>. El procesamiento conserva únicamente los píxeles con valor 0 —alta calidad— y descarta los valores 1 a 5 y el 255. Los píxeles descartados se excluyen del agregado en lugar de contarse, de modo que el área efectivamente medida se reduce; la fracción del territorio con observación válida se registra junto con cada medición.</p>
+    <p>VNP46A2 corrige la reflectancia bidireccional lunar y la atenuación atmosférica, y acompaña cada píxel de <code>Mandatory_Quality_Flag</code>. La presencia de esa bandera es un requisito: un archivo que no la incluya se rechaza en lugar de procesarse sin filtrar. El procesamiento conserva únicamente los píxeles con valor 0 —alta calidad— y descarta los valores 1 a 5 y el 255. Los píxeles descartados se excluyen del agregado en lugar de contarse, de modo que el área efectivamente medida se reduce; la fracción del territorio con observación válida se registra junto con cada medición.</p>
 
     <p>Para la fecha del 5 de enero, VNP46A2 no conserva ningún píxel utilizable en Iztapalapa. El producto identifica la observación como inservible, que es la respuesta correcta y la que VNP46A1 no puede dar.</p>
 

@@ -1,4 +1,4 @@
-"""PydanticAI agent with tools for VNP46A1 satellite data queries."""
+"""PydanticAI agent with tools for Black Marble (VNP46A2) data queries."""
 import asyncio
 import json
 import os
@@ -65,7 +65,7 @@ def _create_agent() -> Agent:
     agent = Agent(
         model,
         instructions=(
-            "Eres un asistente experto en datos de luminosidad nocturna VNP46A1. "
+            "Eres un asistente experto en datos de luminosidad nocturna VNP46A2. "
             "Ayudas a consultar radianza por municipio y fecha. "
             "Cuando el usuario pregunte por un municipio y fecha, usa las herramientas para obtener datos "
             "y responde con un análisis breve. "

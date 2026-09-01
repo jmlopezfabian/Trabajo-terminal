@@ -146,7 +146,7 @@ def hdf5_georreferenciado(tmp_path):
     `sample_hdf5_path` trae metadatos inventados, que servian mientras nadie
     los leia. Ahora `process_image` los comprueba, asi que hace falta un archivo
     que este donde dice estar. Las cifras son las del granulo real
-    VNP46A1.A2024015.h08v07.002: grados por un millon, no metros.
+    VNP46A2.A2024015.h08v07.002: grados por un millon, no metros.
     """
     import h5py
     import numpy as np
@@ -161,10 +161,16 @@ def hdf5_georreferenciado(tmp_path):
         "GridOrigin=HE5_HDFE_GD_UL\n"
     )
     with h5py.File(ruta, "w") as f:
-        grupo = f.create_group("HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields")
-        grupo.create_dataset(
-            "DNB_At_Sensor_Radiance_500m",
+        grupo = f.create_group("HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields")
+        ds = grupo.create_dataset(
+            "DNB_BRDF-Corrected_NTL",
             data=np.arange(2400 * 2400, dtype=np.float32).reshape(2400, 2400) % 100,
+        )
+        ds.attrs["_FillValue"] = np.float32(-999.9)
+        ds.attrs["scale_factor"] = 1.0
+        ds.attrs["units"] = b"nWatts/(cm^2 sr)"
+        grupo.create_dataset(
+            "Mandatory_Quality_Flag", data=np.zeros((2400, 2400), dtype=np.uint8)
         )
         info = f.create_group("HDFEOS INFORMATION")
         info.create_dataset(

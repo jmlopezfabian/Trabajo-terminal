@@ -1,6 +1,7 @@
-## Procesamiento de Imágenes Satelitales VNP46A1
+## Procesamiento de Imágenes Satelitales Black Marble
 
-Proyecto para procesar imágenes satelitales VNP46A1 (luminosidad nocturna) y obtener métricas de radianza por municipio.  
+Proyecto para procesar imágenes satelitales de luminosidad nocturna del producto **VNP46A2**
+(Black Marble, NASA) y obtener métricas de radianza por municipio.  
 Incluye una **API asíncrona con FastAPI** para lanzar jobs de procesamiento en segundo plano y guardar resultados en Parquet.
 
 ### Componentes principales
@@ -154,9 +155,13 @@ sin factor de subdivisión ni pesos que elegir.
 ### Producto: VNP46A2 por omisión
 
 Se lee **VNP46A2**, la escena corregida por BRDF lunar y atmósfera, con
-`Mandatory_Quality_Flag` por píxel. VNP46A1 —radianza cruda al sensor— se elige con
-`NTL_PRODUCTO=VNP46A1`, pero no trae banderas de calidad: una noche completamente
-nublada produce un número plausible que no es luz del suelo.
+`Mandatory_Quality_Flag` por píxel. **Es el único producto soportado.** Un archivo que
+no traiga la bandera de calidad se rechaza en vez de procesarse sin filtrar.
+
+VNP46A1 —radianza cruda al sensor— quedó fuera a propósito. No trae ninguna bandera que
+permita descartar una observación inservible: una noche completamente nublada produce un
+número plausible que no es luz del suelo. Dejarlo disponible como opción invitaba a
+producir series que parecen válidas y no lo son.
 
 El efecto sobre la serie es grande. Variación día a día sobre cinco fechas de 2025:
 
@@ -169,8 +174,9 @@ El efecto sobre la serie es grande. Variación día a día sobre cinco fechas de
 En una de esas cinco fechas, el 5 de enero, VNP46A2 no tiene **ni un píxel utilizable**
 en Iztapalapa: estaba 100% nublado. VNP46A1 entregaba 62,838 como si fuera una medición.
 
-Los niveles de los dos productos difieren entre 10% y 20%: **no se pueden mezclar en una
-misma serie**. Cada registro trae `Producto` para poder distinguirlos.
+Las series generadas antes de este cambio usan VNP46A1 y sus niveles difieren entre 10% y
+20%: **no se pueden mezclar con las nuevas**. Cada registro trae `Producto` para poder
+distinguirlas.
 
 ### Unidades: aviso importante
 

@@ -69,9 +69,10 @@ class MedicionResultado(BaseModel):
     Producto: str = Field(
         "VNP46A2",
         description=(
-            "Black Marble product the radiance came from. VNP46A1 is raw at-sensor "
-            "radiance; VNP46A2 is BRDF/lunar-corrected with per-pixel quality flags. "
-            "Their levels differ by 10-20%: do not mix them in one series."
+            "Black Marble product the radiance came from. Always VNP46A2: "
+            "BRDF/lunar-corrected with per-pixel quality flags. Series produced "
+            "before this became mandatory used raw at-sensor radiance and their "
+            "levels differ by 10-20%: do not mix them with these."
         ),
     )
     Unidades_de_radianza: str = Field(

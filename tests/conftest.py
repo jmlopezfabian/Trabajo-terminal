@@ -33,7 +33,7 @@ def sample_directory_html_with_full_url():
     """HTML with full URL in href (alternative format)."""
     return """
     <html><body>
-    <a href="https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/VNP46A1/2024/1/VNP46A1.A2024001.h08v07.001.2024003022532.h5">file</a>
+    <a href="https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/VNP46A2/2024/001/VNP46A2.A2024001.h08v07.002.2024003022532.h5">file</a>
     </body></html>
     """
 
@@ -47,16 +47,16 @@ def municipios_json_path(fixtures_dir):
 @pytest.fixture
 def sample_hdf5_path(tmp_path):
     """
-    Create a minimal valid HDF5 file with IMAGE_PATH dataset and StructMetadata.
-    Returns path to the temporary .h5 file.
+    HDF5 mínimo con la forma de VNP46A2: radianza corregida y bandera de calidad.
+
+    La bandera es obligatoria; un archivo sin ella se rechaza, así que el fixture
+    la incluye con todos los píxeles en 0 (alta calidad).
     """
     import h5py
     import numpy as np
 
     h5_path = tmp_path / "sample.h5"
-    # Sync config path
-    image_path = "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m"
-    # Small 10x10 radiance matrix (values 0-100)
+    grupo = "HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields"
     radiance = np.random.uniform(0, 100, size=(10, 10)).astype(np.float32)
 
     metadata_str = (
@@ -65,8 +65,14 @@ def sample_hdf5_path(tmp_path):
     )
 
     with h5py.File(h5_path, "w") as f:
-        grp = f.create_group("HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields")
-        grp.create_dataset("DNB_At_Sensor_Radiance_500m", data=radiance)
+        grp = f.create_group(grupo)
+        ds = grp.create_dataset("DNB_BRDF-Corrected_NTL", data=radiance)
+        ds.attrs["_FillValue"] = np.float32(-999.9)
+        ds.attrs["scale_factor"] = 1.0
+        ds.attrs["units"] = b"nWatts/(cm^2 sr)"
+        grp.create_dataset(
+            "Mandatory_Quality_Flag", data=np.zeros((10, 10), dtype=np.uint8)
+        )
         info = f.create_group("HDFEOS INFORMATION")
         info.create_dataset(
             "StructMetadata.0",
@@ -97,9 +103,16 @@ def mock_hdf5_file():
         return mock_file
 
     def _dataset_for(key, root, image_matrix):
-        image_path = "HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/DNB_At_Sensor_Radiance_500m"
-        if key == image_path:
+        grupo = "HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields"
+        if key == f"{grupo}/Mandatory_Quality_Flag":
             mock_ds = MagicMock()
+            calidad = np.zeros(image_matrix.shape, dtype=np.uint8)
+            mock_ds.__getitem__ = MagicMock(return_value=calidad)
+            return mock_ds
+        if key == f"{grupo}/DNB_BRDF-Corrected_NTL":
+            mock_ds = MagicMock()
+            mock_ds.name = f"{grupo}/DNB_BRDF-Corrected_NTL"
+            mock_ds.attrs = {"scale_factor": 1.0, "units": b"nWatts/(cm^2 sr)"}
             mock_ds.__call__ = MagicMock(return_value=image_matrix)
             mock_ds.__getitem__ = MagicMock(return_value=image_matrix)
             return mock_ds

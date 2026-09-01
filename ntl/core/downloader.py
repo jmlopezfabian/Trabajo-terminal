@@ -1,5 +1,5 @@
 """
-Descarga de archivos VNP46A1 desde LAADS.
+Descarga de archivos VNP46A2 desde LAADS.
 
 Aquí es donde la distinción entre síncrono y asíncrono es real: el resto del
 procesamiento no la necesita. Las funciones bloqueantes sirven para una consulta

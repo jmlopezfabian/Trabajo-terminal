@@ -1,5 +1,5 @@
 """
-Procesamiento de imágenes satelitales VNP46A1.
+Procesamiento de imágenes satelitales VNP46A2 (Black Marble).
 
 El paquete está dividido por responsabilidad, no por modelo de concurrencia:
 
@@ -13,6 +13,6 @@ asíncrono vive únicamente en `core.downloader`, que es donde importa.
 
 from .core.models import CoordenadasPixeles, MedicionResultado
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = ["CoordenadasPixeles", "MedicionResultado"]
