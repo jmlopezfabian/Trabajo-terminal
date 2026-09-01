@@ -6,8 +6,10 @@ from datetime import date
 from typing import Any
 
 from ..core.config import IMAGE_PATH, find_image_path
+from ..core.lectura import leer_radianza
 from ..core.metricas import metricas_ponderadas
 from ..core.models import MedicionResultado
+from ..core.utils import verificar_georreferencia
 
 
 def _float_to_json_safe(value: float) -> float | None:
@@ -90,10 +92,14 @@ def extract_radiance_matrix(
     pesos: list[tuple[int, int, float]],
     date_obj: date,
     municipio: str,
+    cuadrante: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Extrae la submatriz de radianza y la máscara binaria del municipio, recortadas al bounding box.
     Devuelve dict con radiance_matrix, municipality_mask, bbox, rows, cols, municipio, fecha.
+
+    `cuadrante` es opcional solo por compatibilidad: si se pasa, se comprueba
+    que el archivo esté georreferenciado donde la tabla de coberturas supone.
     """
     if not os.path.exists(downloaded_path):
         print(f"Archivo no encontrado: {downloaded_path}")
@@ -109,6 +115,9 @@ def extract_radiance_matrix(
         with h5py.File(downloaded_path, "r") as hdf_file:
             radiance_path = find_image_path(hdf_file)
             image_matrix = hdf_file[radiance_path][()]
+
+            if cuadrante:
+                verificar_georreferencia(hdf_file, cuadrante, image_matrix.shape)
 
             # Filtrar coordenadas válidas dentro de la imagen
             pesos_validos = [
@@ -135,13 +144,20 @@ def extract_radiance_matrix(
         return None
 
 
-def process_image(downloaded_path, pesos, date_obj, municipio, delete_file=True):
+def process_image(downloaded_path, pesos, date_obj, municipio, delete_file=True,
+                  cuadrante=None):
     """
     Calcula las métricas del municipio ponderando cada píxel por su cobertura.
 
     `pesos` son tripletas (x, y, w) con w en (0, 1]. Contar los píxeles enteros
     subestimaba el área entre 7% y 31% según la forma del municipio, porque
     descartaba una franja de frontera que está cubierta a medias.
+
+    Si se pasa `cuadrante`, antes de tocar la radianza se comprueba que el
+    archivo declare la misma esquina que se usó para construir las coberturas.
+    Sin esa comprobación, un cambio de convención en el producto desplazaría
+    todos los municipios en silencio; un solo píxel de desalineamiento mueve la
+    media municipal un 4.6% en la mediana de las alcaldías.
     """
     if not os.path.exists(downloaded_path):
         print(f"Archivo no encontrado: {downloaded_path}")
@@ -155,9 +171,12 @@ def process_image(downloaded_path, pesos, date_obj, municipio, delete_file=True)
                 return None
         
         with h5py.File(downloaded_path, "r") as hdf_file:
-            radiance_path = find_image_path(hdf_file)
-            image_matrix = hdf_file[radiance_path][()]
-            copia = np.clip(image_matrix.copy(), 0, np.percentile(image_matrix, 99))
+            # La radianza se lee en unidades físicas y con NaN donde no hay
+            # medición; `lectura` trae las unidades y la fracción válida.
+            image_matrix, lectura = leer_radianza(hdf_file)
+
+            if cuadrante:
+                verificar_georreferencia(hdf_file, cuadrante, image_matrix.shape)
 
             # Filtrar coordenadas válidas
             pesos_validos = [
@@ -185,10 +204,17 @@ def process_image(downloaded_path, pesos, date_obj, municipio, delete_file=True)
 
             crop = _crop_radiance_and_mask(image_matrix, pesos_validos)
             metricas = metricas_ponderadas(valores, cobertura)
+            if metricas is None:
+                print(f"⚠️ {municipio} en {date_obj}: ningún píxel con medición válida")
+                return None
+            if metricas["Fraccion_valida"] < 1.0:
+                print(f"⚠️ {municipio} en {date_obj}: solo "
+                      f"{metricas['Fraccion_valida']*100:.1f}% del territorio trae medición")
 
             datos = MedicionResultado(
                 Fecha=date_obj,
                 Municipio=municipio,
+                Unidades_de_radianza=lectura["unidades"] or "nW/(cm2 sr)",
                 **metricas,
                 Bbox=crop["bbox"],
                 Filas=crop["rows"],

@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import os
 from typing import Optional, Tuple, List
 from ..core.config import IMAGE_PATH, find_image_path, temp_path
+from ..core.lectura import leer_radianza
 from ..core.models import MedicionResultado
 from ..core.utils import parse_date, extraer_coordenadas, left_right_coords
 from ..core.downloader import find_file, download_file
@@ -99,7 +100,7 @@ class SatelliteProcessor:
                 hdf_file.visititems(print_structure)
                 return None
             
-            image_matrix = hdf_file[image_path][()]
+            image_matrix, lectura = leer_radianza(hdf_file)
             coordenadas_municipio = extraer_coordenadas(self.municipio)
             if coordenadas_municipio is None:
                 print("No se pudieron extraer las coordenadas del municipio.")
@@ -220,7 +221,11 @@ class SatelliteProcessor:
                     return None
 
                 # Crear medición usando solo MedicionResultado
-                medicion = MedicionResultado(Fecha=date_obj, **metricas)
+                medicion = MedicionResultado(
+                    Fecha=date_obj,
+                    Unidades_de_radianza=lectura['unidades'] or 'nW/(cm2 sr)',
+                    **metricas,
+                )
                 if show_plots:
                     # Guardar la figura usando la función 
                     plt.show()
@@ -311,9 +316,9 @@ class SatelliteProcessor:
                 hdf_file.visititems(print_structure)
                 return None
                 
-            image_matrix = hdf_file[image_path][()]
+            image_matrix, _ = leer_radianza(hdf_file)
             coordenadas_municipio = extraer_coordenadas(self.municipio)
-            
+
             if coordenadas_municipio is None:
                 print("No se pudieron extraer las coordenadas del municipio.")
                 return None
