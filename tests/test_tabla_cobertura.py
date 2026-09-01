@@ -10,7 +10,7 @@ import json
 import numpy as np
 import pytest
 
-from ntl.core.config import PIXELES_MUNICIPIOS
+from ntl.core.config import PIXELES_MUNICIPIOS, RUTA_MUNICIPIOS
 from ntl.core.utils import extraer_coordenadas, load_coord_data, normalize_municipio
 from ntl.geometria.image_processor import pesos_municipio, recortar
 
@@ -82,3 +82,64 @@ class TestCoherenciaConLaGeometria:
         assert datos.area > interiores
         # El sesgo documentado para Azcapotzalco era de -19.4%
         assert (interiores - datos.area) / datos.area < -0.15
+
+
+class TestSuperficieOficial:
+    """
+    La tabla, convertida a km², debe reproducir la superficie real del territorio.
+
+    Es la única prueba que valida la georreferenciación completa —esquina del
+    cuadrante, resolución, transformación de coordenadas y coberturas— contra
+    una referencia ajena al proyecto. Las demás dan por buena esa cadena.
+    """
+
+    # Superficie de la Ciudad de México según INEGI. Las cifras publicadas por
+    # alcaldía no sirven de referencia: suman ~1461 km², 34 menos que el total
+    # oficial, y las fuentes se contradicen entre sí (para Tlalpan circulan 310,
+    # 312, 314.5 y 340 km²). El agregado sí es consistente.
+    CDMX_KM2 = 1495.0
+
+    @staticmethod
+    def _area_celda_km2(geod, x, y, ul, res):
+        """Área geodésica de una celda de la retícula sobre el elipsoide."""
+        lon0, lat0 = ul[0] + x * res, ul[1] - y * res
+        lon1, lat1 = lon0 + res, lat0 - res
+        area, _ = geod.polygon_area_perimeter(
+            [lon0, lon1, lon1, lon0], [lat0, lat0, lat1, lat1]
+        )
+        return abs(area) / 1e6
+
+    @staticmethod
+    def _esquina(cuadrante):
+        return (-180.0 + 10.0 * int(cuadrante[1:3]), 90.0 - 10.0 * int(cuadrante[4:6]))
+
+    def _km2(self, geod, datos):
+        res = 10 / FORMA_CUADRANTE[1]
+        ul = self._esquina(datos.cuadrante)
+        return sum(w * self._area_celda_km2(geod, x, y, ul, res) for x, y, w in datos.pesos)
+
+    def test_la_suma_de_las_alcaldias_es_la_superficie_de_la_cdmx(self, tabla):
+        geod = pytest.importorskip("pyproj").Geod(ellps="WGS84")
+
+        with open(RUTA_MUNICIPIOS, encoding="utf-8") as f:
+            cdmx = [x["properties"]["NOMGEO"] for x in json.load(f)["features"]
+                    if x["properties"]["CVE_ENT"] == "09"]
+
+        total = sum(
+            self._km2(geod, load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS))
+            for nombre in cdmx
+        )
+        assert total == pytest.approx(self.CDMX_KM2, rel=0.01)
+
+    @pytest.mark.parametrize("nombre", ["Iztacalco", "Azcapotzalco", "Tlalpan", "Milpa Alta"])
+    def test_coincide_con_el_area_geodesica_del_poligono(self, nombre):
+        """Compara contra el área del mismo polígono sobre el elipsoide WGS84."""
+        pyproj = pytest.importorskip("pyproj")
+        geod = pyproj.Geod(ellps="WGS84")
+
+        coordenadas = extraer_coordenadas(nombre)
+        area_geodesica, _ = geod.polygon_area_perimeter(coordenadas[:, 0], coordenadas[:, 1])
+        area_geodesica = abs(area_geodesica) / 1e6
+
+        datos = load_coord_data(normalize_municipio(nombre), PIXELES_MUNICIPIOS)
+        assert self._km2(geod, datos) == pytest.approx(area_geodesica, rel=1e-3)
