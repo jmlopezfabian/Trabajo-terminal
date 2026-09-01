@@ -66,6 +66,30 @@ class MedicionResultado(BaseModel):
     Percentil_25_de_radianza: float = Field(..., description="25th percentile of the radiance")
     Percentil_50_de_radianza: float = Field(..., description="50th percentile of the radiance")
     Percentil_75_de_radianza: float = Field(..., description="75th percentile of the radiance")
+    Producto: str = Field(
+        "VNP46A2",
+        description=(
+            "Black Marble product the radiance came from. VNP46A1 is raw at-sensor "
+            "radiance; VNP46A2 is BRDF/lunar-corrected with per-pixel quality flags. "
+            "Their levels differ by 10-20%: do not mix them in one series."
+        ),
+    )
+    Unidades_de_radianza: str = Field(
+        "nW/(cm2 sr)",
+        description=(
+            "Physical units of every radiance field. Series produced before the "
+            "scale_factor was applied are in raw digital numbers and are 10x larger; "
+            "they are NOT comparable with these values."
+        ),
+    )
+    Fraccion_valida: float = Field(
+        1.0,
+        description=(
+            "Fraction of the municipality area that had a valid reading. Below 1.0 the "
+            "sum covers only part of the territory: the fill pixels were excluded "
+            "instead of being counted as radiance."
+        ),
+    )
     Bbox: Optional[BboxRecorte] = Field(None, description="Bounding box of the cropped image in the original tile")
     Filas: Optional[int] = Field(None, description="Number of rows in the cropped radiance matrix")
     Columnas: Optional[int] = Field(None, description="Number of columns in the cropped radiance matrix")

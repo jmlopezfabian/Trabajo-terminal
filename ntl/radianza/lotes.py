@@ -170,7 +170,8 @@ class SatelliteImagesAsync:
                         municipio_data['pesos'],
                         date_obj, 
                         municipio_data['nombre'],
-                        delete_file=False  # No eliminar el archivo hasta procesar todos los municipios
+                        delete_file=False,  # No eliminar el archivo hasta procesar todos los municipios
+                        cuadrante=cuadrante,  # para verificar la georreferencia del archivo
                     )
                     if datos:
                         results.append(datos.model_dump())

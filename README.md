@@ -148,7 +148,43 @@ forma del municipio.
 
 La tabla de cobertura (`ntl_data/municipios_coordenadas_pixeles.json`) se regenera
 con `python scripts/generar_coordenadas_pixeles.py`; solo hace falta si cambian los
-polígonos municipales.
+polígonos municipales. La cobertura se calcula por intersección geométrica exacta,
+sin factor de subdivisión ni pesos que elegir.
+
+### Producto: VNP46A2 por omisión
+
+Se lee **VNP46A2**, la escena corregida por BRDF lunar y atmósfera, con
+`Mandatory_Quality_Flag` por píxel. VNP46A1 —radianza cruda al sensor— se elige con
+`NTL_PRODUCTO=VNP46A1`, pero no trae banderas de calidad: una noche completamente
+nublada produce un número plausible que no es luz del suelo.
+
+El efecto sobre la serie es grande. Variación día a día sobre cinco fechas de 2025:
+
+| Municipio | VNP46A1 | VNP46A2 |
+|---|---|---|
+| Iztapalapa | 12.1% | **3.8%** |
+| Azcapotzalco | 12.8% | **3.4%** |
+| Milpa Alta | 23.9% | **12.0%** |
+
+En una de esas cinco fechas, el 5 de enero, VNP46A2 no tiene **ni un píxel utilizable**
+en Iztapalapa: estaba 100% nublado. VNP46A1 entregaba 62,838 como si fuera una medición.
+
+Los niveles de los dos productos difieren entre 10% y 20%: **no se pueden mezclar en una
+misma serie**. Cada registro trae `Producto` para poder distinguirlos.
+
+### Unidades: aviso importante
+
+Los valores de radianza están en **nW/(cm² sr)**, aplicando el `scale_factor` que
+declara el producto. Las series generadas **antes de septiembre de 2026** están en
+cuentas digitales sin escalar y son **diez veces mayores**: no se pueden concatenar
+con las nuevas sin convertir. Cada registro trae `Unidades_de_radianza` para poder
+distinguirlas.
+
+Los píxeles sin medición (`_FillValue`) se excluyen del agregado en vez de sumarse
+como radianza. `Fraccion_valida` indica qué parte del territorio del municipio traía
+dato: por debajo de 1.0, la suma cubre solo esa fracción. Las series anteriores
+incluyen 20 registros contaminados —cuatro fechas en las que el cuadrante entero
+vino vacío— que se retiran con `python scripts/purgar_registros_invalidos.py`.
 
 La API usa `ntl.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
 

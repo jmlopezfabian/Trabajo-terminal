@@ -136,3 +136,88 @@ class TestPonderacionPorCobertura:
                           "Iztapalapa", delete_file=False)
         assert r is not None
         assert r.Cantidad_de_pixeles == pytest.approx(4.0)
+
+
+@pytest.fixture
+def hdf5_georreferenciado(tmp_path):
+    """
+    HDF5 minimo cuyo StructMetadata.0 declara ser el cuadrante h08v07.
+
+    `sample_hdf5_path` trae metadatos inventados, que servian mientras nadie
+    los leia. Ahora `process_image` los comprueba, asi que hace falta un archivo
+    que este donde dice estar. Las cifras son las del granulo real
+    VNP46A1.A2024015.h08v07.002: grados por un millon, no metros.
+    """
+    import h5py
+    import numpy as np
+
+    ruta = tmp_path / "h08v07.h5"
+    metadata = (
+        "XDim=2400\n"
+        "YDim=2400\n"
+        "UpperLeftPointMtrs=(-100000000.000000,20000000.000000)\n"
+        "LowerRightMtrs=(-90000000.000000,10000000.000000)\n"
+        "Projection=HE5_GCTP_GEO\n"
+        "GridOrigin=HE5_HDFE_GD_UL\n"
+    )
+    with h5py.File(ruta, "w") as f:
+        grupo = f.create_group("HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields")
+        grupo.create_dataset(
+            "DNB_At_Sensor_Radiance_500m",
+            data=np.arange(2400 * 2400, dtype=np.float32).reshape(2400, 2400) % 100,
+        )
+        info = f.create_group("HDFEOS INFORMATION")
+        info.create_dataset(
+            "StructMetadata.0",
+            data=np.array(metadata, dtype="S" + str(len(metadata) + 1)),
+        )
+    return str(ruta)
+
+
+class TestVerificacionDeGeorreferencia:
+    """
+    Antes de tocar la radianza, el archivo tiene que estar donde se supone.
+
+    Las coberturas se precalculan contra un origen derivado del identificador
+    del cuadrante. Si el producto cambiara de convencion, todos los municipios
+    se desplazarian en silencio y ninguna prueba de area lo notaria, porque
+    todas validan contra ese mismo supuesto. Un pixel de desalineamiento mueve
+    la media de radianza municipal un 4.6% en la mediana de las alcaldias
+    (ver scripts/sensibilidad_desplazamiento.py).
+    """
+
+    PESOS = [(1200, 1200, 1.0), (1201, 1200, 0.5)]
+
+    def test_procesa_cuando_la_georreferencia_coincide(self, hdf5_georreferenciado):
+        datos = process_image(
+            hdf5_georreferenciado, self.PESOS, date(2024, 1, 15), "prueba",
+            delete_file=False, cuadrante="h08v07",
+        )
+        assert datos is not None
+        assert datos.Cantidad_de_pixeles == pytest.approx(1.5)
+
+    def test_no_devuelve_datos_si_el_cuadrante_no_coincide(self, hdf5_georreferenciado, capsys):
+        datos = process_image(
+            hdf5_georreferenciado, self.PESOS, date(2024, 1, 15), "prueba",
+            delete_file=False, cuadrante="h09v07",
+        )
+        assert datos is None
+        assert "Georreferencia incoherente" in capsys.readouterr().out
+
+    def test_sin_cuadrante_no_se_comprueba_nada(self, hdf5_georreferenciado):
+        """La verificacion es opcional: el resto del proyecto llama sin ella."""
+        datos = process_image(
+            hdf5_georreferenciado, self.PESOS, date(2024, 1, 15), "prueba",
+            delete_file=False,
+        )
+        assert datos is not None
+
+    def test_extract_radiance_matrix_tambien_comprueba(self, hdf5_georreferenciado):
+        assert extract_radiance_matrix(
+            hdf5_georreferenciado, self.PESOS, date(2024, 1, 15), "prueba",
+            cuadrante="h08v07",
+        ) is not None
+        assert extract_radiance_matrix(
+            hdf5_georreferenciado, self.PESOS, date(2024, 1, 15), "prueba",
+            cuadrante="h09v07",
+        ) is None
