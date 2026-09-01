@@ -13,7 +13,14 @@ from typing import Tuple
 
 import numpy as np
 
-from .config import find_image_path
+from .config import BANDERA_CALIDAD, CALIDAD_ACEPTABLE, find_image_path
+
+
+def _buscar_hermano(hdf_file, dataset, nombre):
+    """Otro dataset del mismo grupo `Data Fields`, si existe."""
+    grupo = dataset.name.rsplit("/", 1)[0]
+    ruta = f"{grupo}/{nombre}"
+    return hdf_file[ruta] if ruta in hdf_file else None
 
 
 def leer_radianza(hdf_file) -> Tuple[np.ndarray, dict]:
@@ -44,11 +51,24 @@ def leer_radianza(hdf_file) -> Tuple[np.ndarray, dict]:
 
     valido = np.ones(crudo.shape, dtype=bool)
     if relleno is not None:
-        valido &= crudo != relleno
+        # El relleno de VNP46A2 es -999.9 en punto flotante; compararlo con
+        # igualdad exacta es frágil, así que se usa una vecindad.
+        if np.issubdtype(crudo.dtype, np.floating):
+            valido &= np.abs(crudo - float(relleno)) > 1e-3
+        else:
+            valido &= crudo != relleno
     if minimo is not None:
         valido &= crudo >= minimo
     if maximo is not None:
         valido &= crudo <= maximo
+
+    # VNP46A2 marca por píxel si la recuperación sirve. Sin esto, una noche
+    # nublada entrega un número plausible que no es luz del suelo: en el
+    # 2025-01-05 de Iztapalapa, VNP46A1 dio 62,838 y VNP46A2 dice que no hay
+    # ni un píxel utilizable.
+    calidad = _buscar_hermano(hdf_file, dataset, BANDERA_CALIDAD)
+    if calidad is not None:
+        valido &= calidad[()] == CALIDAD_ACEPTABLE
 
     radianza = np.full(crudo.shape, np.nan, dtype=np.float64)
     radianza[valido] = crudo[valido].astype(np.float64) * escala + desplazamiento
@@ -58,6 +78,8 @@ def leer_radianza(hdf_file) -> Tuple[np.ndarray, dict]:
         unidades = unidades.decode(errors="replace")
 
     return radianza, {
+        "producto": "VNP46A2" if calidad is not None else "VNP46A1",
+        "calidad_aplicada": calidad is not None,
         "escala": escala,
         "desplazamiento": desplazamiento,
         "unidades": unidades,

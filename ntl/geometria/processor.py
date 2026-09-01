@@ -223,6 +223,7 @@ class SatelliteProcessor:
                 # Crear medición usando solo MedicionResultado
                 medicion = MedicionResultado(
                     Fecha=date_obj,
+                    Producto=lectura['producto'],
                     Unidades_de_radianza=lectura['unidades'] or 'nW/(cm2 sr)',
                     **metricas,
                 )

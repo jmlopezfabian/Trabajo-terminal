@@ -151,6 +151,27 @@ con `python scripts/generar_coordenadas_pixeles.py`; solo hace falta si cambian 
 polígonos municipales. La cobertura se calcula por intersección geométrica exacta,
 sin factor de subdivisión ni pesos que elegir.
 
+### Producto: VNP46A2 por omisión
+
+Se lee **VNP46A2**, la escena corregida por BRDF lunar y atmósfera, con
+`Mandatory_Quality_Flag` por píxel. VNP46A1 —radianza cruda al sensor— se elige con
+`NTL_PRODUCTO=VNP46A1`, pero no trae banderas de calidad: una noche completamente
+nublada produce un número plausible que no es luz del suelo.
+
+El efecto sobre la serie es grande. Variación día a día sobre cinco fechas de 2025:
+
+| Municipio | VNP46A1 | VNP46A2 |
+|---|---|---|
+| Iztapalapa | 12.1% | **3.8%** |
+| Azcapotzalco | 12.8% | **3.4%** |
+| Milpa Alta | 23.9% | **12.0%** |
+
+En una de esas cinco fechas, el 5 de enero, VNP46A2 no tiene **ni un píxel utilizable**
+en Iztapalapa: estaba 100% nublado. VNP46A1 entregaba 62,838 como si fuera una medición.
+
+Los niveles de los dos productos difieren entre 10% y 20%: **no se pueden mezclar en una
+misma serie**. Cada registro trae `Producto` para poder distinguirlos.
+
 ### Unidades: aviso importante
 
 Los valores de radianza están en **nW/(cm² sr)**, aplicando el `scale_factor` que

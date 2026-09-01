@@ -214,6 +214,7 @@ def process_image(downloaded_path, pesos, date_obj, municipio, delete_file=True,
             datos = MedicionResultado(
                 Fecha=date_obj,
                 Municipio=municipio,
+                Producto=lectura["producto"],
                 Unidades_de_radianza=lectura["unidades"] or "nW/(cm2 sr)",
                 **metricas,
                 Bbox=crop["bbox"],

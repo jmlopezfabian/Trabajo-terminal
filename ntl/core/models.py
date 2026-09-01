@@ -66,6 +66,14 @@ class MedicionResultado(BaseModel):
     Percentil_25_de_radianza: float = Field(..., description="25th percentile of the radiance")
     Percentil_50_de_radianza: float = Field(..., description="50th percentile of the radiance")
     Percentil_75_de_radianza: float = Field(..., description="75th percentile of the radiance")
+    Producto: str = Field(
+        "VNP46A2",
+        description=(
+            "Black Marble product the radiance came from. VNP46A1 is raw at-sensor "
+            "radiance; VNP46A2 is BRDF/lunar-corrected with per-pixel quality flags. "
+            "Their levels differ by 10-20%: do not mix them in one series."
+        ),
+    )
     Unidades_de_radianza: str = Field(
         "nW/(cm2 sr)",
         description=(
