@@ -13,7 +13,7 @@ def mock_coord_data():
     """Fake CoordenadasPixeles-like object for init."""
     obj = MagicMock()
     obj.cuadrante = "h08v07"
-    obj.coordenadas_pixeles = [(1, 1), (2, 1), (2, 2), (1, 2)]
+    obj.pesos = [(1, 1, 1.0), (2, 1, 0.5), (2, 2, 1.0), (1, 2, 0.25)]
     return obj
 
 

@@ -4,7 +4,7 @@ import os
 from datetime import date, datetime
 from typing import Literal
 
-from vnp46a1.core.config import PIXELES_MUNICIPIOS
+from vnp46a1.core.config import PIXELES_MUNICIPIOS, temp_path
 from vnp46a1.core.downloader import download_file_async, find_file_async
 from vnp46a1.radianza.extraccion import extract_radiance_matrix
 from vnp46a1.radianza.lotes import SatelliteImagesAsync
@@ -119,8 +119,7 @@ async def run_matriz_job(job_id: str, municipio: str, fecha: date) -> None:
                 state.error = f"No se encontró archivo HDF5 para {year}-{day} ({cuadrante})"
                 return
 
-            os.makedirs("../temp", exist_ok=True)
-            save_path = f"../temp/{date_obj}_{cuadrante}_matriz.h5"
+            save_path = str(temp_path(f"{date_obj}_{cuadrante}_matriz.h5"))
             downloaded_path = await download_file_async(session, h5_url, save_path)
             if not downloaded_path:
                 state.status = "failed"
@@ -130,7 +129,7 @@ async def run_matriz_job(job_id: str, municipio: str, fecha: date) -> None:
         state.progress = "Extrayendo matrices..."
         result = extract_radiance_matrix(
             downloaded_path,
-            list(coord_data.coordenadas_pixeles),
+            list(coord_data.pesos),
             date_obj,
             municipio_norm,
         )

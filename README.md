@@ -105,7 +105,7 @@ La documentación interactiva y la interfaz web estarán en:
         {
           "Fecha": "2024-01-01",
           "Municipio": "iztapalapa",
-          "Cantidad_de_pixeles": 100,
+          "Cantidad_de_pixeles": 114.39,
           "Suma_de_radianza": 1000.0,
           "Media_de_radianza": 10.0,
           "Desviacion_estandar_de_radianza": 1.0,
@@ -130,9 +130,20 @@ La documentación interactiva y la interfaz web estarán en:
 
 1. Para cada fecha y municipio:
    - Se descarga el archivo HDF5 VNP46A1 correspondiente (NASA).
-   - Se recorta la imagen usando las coordenadas de píxeles del municipio.
-2. Se calculan métricas de radianza (media, suma, percentiles, máximo, mínimo, etc.) y se modelan con `MedicionResultado`.
+   - Se recorta la imagen usando la tabla de cobertura del municipio.
+2. Se calculan métricas de radianza **ponderando cada píxel por la fracción que el
+   municipio cubre de él**, y se modelan con `MedicionResultado`.
 3. Los resultados se consolidan en un `DataFrame` de `pandas` y se **guardan como Parquet** para análisis posterior.
+
+`Cantidad_de_pixeles` es el **área del municipio en píxeles**, no un conteo: es la suma
+de las coberturas, así que puede ser fraccionaria. Contar píxeles enteros obligaba a
+aceptar o descartar cada celda de frontera, y como esas celdas están cubiertas
+aproximadamente por la mitad, descartarlas subestimaba el área entre 7% y 31% según la
+forma del municipio.
+
+La tabla de cobertura (`vnp46a1_data/municipios_coordenadas_pixeles.json`) se regenera
+con `python scripts/generar_coordenadas_pixeles.py`; solo hace falta si cambian los
+polígonos municipales.
 
 La API usa `vnp46a1.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
 
