@@ -11,12 +11,35 @@ from typing import Optional, Tuple, List
 from ..core.config import IMAGE_PATH, find_image_path, temp_path
 from ..core.lectura import leer_radianza
 from ..core.models import MedicionResultado
-from ..core.utils import parse_date, extraer_coordenadas, left_right_coords
+from ..core.utils import parse_date, extraer_geometria, left_right_coords
 from ..core.downloader import find_file, download_file
 from .cobertura import cobertura_exacta, metricas_ponderadas, poligono_en_pixeles
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
+
+
+def _verificar_que_cabe(poligono, forma, municipio, cuadrante):
+    """
+    Comprueba que el municipio cabe entero en la imagen que se descargó.
+
+    `SatelliteProcessor` trabaja con un cuadrante a la vez, el que se le pasa. Si
+    el municipio se sale de él, el recorte se haría con índices fuera de rango
+    —y en numpy un índice negativo no falla, recorta por el otro extremo—, así
+    que saldría una imagen de otra parte del cuadrante con toda la pinta de ser
+    la correcta. Mejor decirlo y mandar a la ruta que sí compone imágenes.
+    """
+    minx, miny, maxx, maxy = poligono.bounds
+    alto, ancho = forma
+    if minx < 0 or miny < 0 or maxx > ancho or maxy > alto:
+        raise ValueError(
+            f"{municipio} no cabe en {cuadrante}: su polígono llega a "
+            f"x[{minx:.0f}, {maxx:.0f}] y[{miny:.0f}, {maxy:.0f}] sobre una "
+            f"retícula de {ancho}x{alto}. Es un municipio repartido entre varios "
+            f"cuadrantes; procésalo con ntl.radianza (process_image_mosaico), que "
+            f"compone las imágenes, o con SatelliteImagesAsync."
+        )
+
 
 class SatelliteProcessor:
     """
@@ -89,7 +112,7 @@ class SatelliteProcessor:
                 return None
             
             image_matrix, lectura = leer_radianza(hdf_file)
-            coordenadas_municipio = extraer_coordenadas(self.municipio)
+            coordenadas_municipio = extraer_geometria(self.municipio)
             if coordenadas_municipio is None:
                 print("No se pudieron extraer las coordenadas del municipio.")
                 return None
@@ -109,6 +132,7 @@ class SatelliteProcessor:
                 poligono = poligono_en_pixeles(
                     coordenadas_municipio, left_coord, image_matrix.shape
                 )
+                _verificar_que_cabe(poligono, image_matrix.shape, self.municipio, quadrant)
                 pesos, fila_0, columna_0 = cobertura_exacta(poligono)
                 alto, ancho = pesos.shape
                 imagen_recortada = image_matrix[fila_0:fila_0 + alto, columna_0:columna_0 + ancho]
@@ -120,29 +144,37 @@ class SatelliteProcessor:
                 copia_imagen = np.clip(imagen_recortada, 0,
                                        np.nanpercentile(imagen_recortada, 99))
 
-                # Contorno del municipio en coordenadas del recorte, para superponerlo
-                contorno_x, contorno_y = poligono.exterior.coords.xy
-                contorno_x = np.asarray(contorno_x) - columna_0
-                contorno_y = np.asarray(contorno_y) - fila_0
+                # Contornos del municipio en coordenadas del recorte, para
+                # superponerlos. Son varios: un municipio puede tener islas, y
+                # cada hueco es un contorno más.
+                contornos = []
+                for parte in (poligono.geoms if hasattr(poligono, "geoms") else [poligono]):
+                    for anillo in [parte.exterior, *parte.interiors]:
+                        xs, ys = anillo.coords.xy
+                        contornos.append((np.asarray(xs) - columna_0,
+                                          np.asarray(ys) - fila_0))
 
                 if show_plots:
                     ax[0][1].imshow(copia_imagen)
                     ax[0][1].set_title("Imagen recortada")
 
                     ax[1][0].imshow(copia_imagen)
-                    ax[1][0].plot(contorno_x, contorno_y, 'k-', linewidth=1.5, alpha=0.9,
-                                  label='Contorno del municipio')
+                    for i, (cx, cy) in enumerate(contornos):
+                        ax[1][0].plot(cx, cy, 'k-', linewidth=1.5, alpha=0.9,
+                                      label='Contorno del municipio' if i == 0 else None)
                     ax[1][0].set_title("Recorte con el contorno superpuesto")
                     ax[1][0].legend(loc='upper right', fontsize=8)
 
                     im = ax[1][1].imshow(pesos, cmap="Blues", vmin=0, vmax=1)
-                    ax[1][1].plot(contorno_x, contorno_y, 'k-', linewidth=1.5, alpha=0.9)
+                    for cx, cy in contornos:
+                        ax[1][1].plot(cx, cy, 'k-', linewidth=1.5, alpha=0.9)
                     ax[1][1].set_title("Cobertura por píxel")
                     fig.colorbar(im, ax=ax[1][1], fraction=0.046)
 
                     ax[2][0].imshow(copia_imagen)
                     ax[2][0].imshow(pesos, cmap="Blues", alpha=0.45, vmin=0, vmax=1)
-                    ax[2][0].plot(contorno_x, contorno_y, 'k-', linewidth=1.5, alpha=0.9)
+                    for cx, cy in contornos:
+                        ax[2][0].plot(cx, cy, 'k-', linewidth=1.5, alpha=0.9)
                     ax[2][0].set_title("Radianza ponderada por cobertura")
 
                 # Métricas ponderadas por área: invariantes al factor de escala
@@ -257,7 +289,7 @@ class SatelliteProcessor:
                 return None
                 
             image_matrix, _ = leer_radianza(hdf_file)
-            coordenadas_municipio = extraer_coordenadas(self.municipio)
+            coordenadas_municipio = extraer_geometria(self.municipio)
 
             if coordenadas_municipio is None:
                 print("No se pudieron extraer las coordenadas del municipio.")
@@ -269,6 +301,7 @@ class SatelliteProcessor:
                 poligono = poligono_en_pixeles(
                     coordenadas_municipio, left_coord, image_matrix.shape
                 )
+                _verificar_que_cabe(poligono, image_matrix.shape, self.municipio, quadrant)
                 pesos, fila_0, columna_0 = cobertura_exacta(poligono)
                 alto, ancho = pesos.shape
                 imagen_recortada = image_matrix[fila_0:fila_0 + alto, columna_0:columna_0 + ancho]

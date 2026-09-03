@@ -2,35 +2,98 @@ from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Tuple
 from datetime import date
 
+class PiezaCuadrante(BaseModel):
+    """
+    La parte de un municipio que cae en un cuadrante concreto.
+
+    `pesos` está en coordenadas de píxel **locales** a la retícula de ese
+    cuadrante, que es como se indexa la imagen que se descarga.
+    """
+
+    cuadrante: str = Field(..., description="Cuadrante hHHvVV al que pertenecen los píxeles")
+    pesos: List[Tuple[int, int, float]] = Field(
+        ..., description="(x, y, coverage) locales al cuadrante; coverage en (0, 1]"
+    )
+
+    @property
+    def area(self) -> float:
+        return sum(w for _, _, w in self.pesos)
+
+
 class CoordenadasPixeles(BaseModel):
     """
-    Cobertura precalculada de un municipio sobre la retícula de un cuadrante.
+    Cobertura precalculada de un municipio, repartida entre los cuadrantes que toca.
 
     Cada entrada de `pesos` es (x, y, w) con w en (0, 1]: la fracción del píxel
     que cae dentro del municipio. Los píxeles de frontera valen menos de 1, que
     es justo lo que un conjunto de coordenadas no podía expresar.
+
+    Un municipio no tiene por qué caber en un cuadrante: la retícula se corta
+    cada 10 grados por conveniencia del archivo, no por ninguna frontera
+    administrativa. Por eso la unidad es la lista de `piezas` y no un cuadrante
+    único; el caso de una sola pieza, que es el habitual, se sigue escribiendo y
+    leyendo como antes.
     """
 
-    cuadrante: str = Field(..., description="Cuadrante of the image")
-    pesos: List[Tuple[int, int, float]] = Field(
-        ..., description="(x, y, coverage) per pixel; coverage in (0, 1]"
+    piezas: List[PiezaCuadrante] = Field(
+        ..., description="Cobertura por cuadrante; normalmente una sola pieza"
     )
 
     @model_validator(mode="before")
     @classmethod
-    def _acepta_formato_anterior(cls, data):
+    def _acepta_formatos_anteriores(cls, data):
         """
-        Lee el formato previo, en el que solo había coordenadas.
+        Lee los dos formatos previos: un cuadrante con pesos y un cuadrante con
+        solo coordenadas.
 
-        Un archivo viejo sigue cargando, con cobertura 1.0 en cada píxel. Eso
-        reproduce el comportamiento anterior, que subestimaba el área del
-        municipio porque descartaba la franja de frontera entera; regenera el
-        archivo con scripts/generar_coordenadas_pixeles.py para corregirlo.
+        Un archivo viejo sigue cargando. El de solo coordenadas se lee con
+        cobertura 1.0 en cada píxel, lo que reproduce el comportamiento
+        anterior, que subestimaba el área del municipio porque descartaba la
+        franja de frontera entera; regenera el archivo con
+        scripts/generar_coordenadas_pixeles.py para corregirlo.
         """
-        if isinstance(data, dict) and "pesos" not in data and "coordenadas_pixeles" in data:
-            data = dict(data)
+        if not isinstance(data, dict) or "piezas" in data:
+            return data
+
+        data = dict(data)
+        if "coordenadas_pixeles" in data and "pesos" not in data:
             data["pesos"] = [(x, y, 1.0) for x, y in data.pop("coordenadas_pixeles")]
+        if "cuadrante" in data and "pesos" in data:
+            data["piezas"] = [{"cuadrante": data.pop("cuadrante"),
+                               "pesos": data.pop("pesos")}]
         return data
+
+    @property
+    def cuadrantes(self) -> List[str]:
+        """Cuadrantes que el municipio toca, en orden de lectura del mosaico."""
+        return [pieza.cuadrante for pieza in self.piezas]
+
+    @property
+    def cuadrante(self) -> str:
+        """
+        El cuadrante, cuando solo hay uno.
+
+        Falla si el municipio ocupa varios en vez de devolver el primero: quien
+        pida un cuadrante único a un municipio repartido está a punto de
+        procesar media ciudad creyendo que la procesó entera.
+        """
+        if len(self.piezas) != 1:
+            raise ValueError(
+                f"El municipio ocupa {len(self.piezas)} cuadrantes "
+                f"({', '.join(self.cuadrantes)}); usa .piezas o .cuadrantes."
+            )
+        return self.piezas[0].cuadrante
+
+    @property
+    def pesos(self) -> List[Tuple[int, int, float]]:
+        """Los pesos, cuando hay un solo cuadrante. Ver `cuadrante`."""
+        if len(self.piezas) != 1:
+            raise ValueError(
+                f"El municipio ocupa {len(self.piezas)} cuadrantes "
+                f"({', '.join(self.cuadrantes)}); los pesos de cada uno son "
+                f"locales a su retícula y no se pueden concatenar. Usa .piezas."
+            )
+        return self.piezas[0].pesos
 
     @property
     def coordenadas_pixeles(self) -> List[Tuple[int, int]]:
@@ -39,8 +102,8 @@ class CoordenadasPixeles(BaseModel):
 
     @property
     def area(self) -> float:
-        """Área del municipio en píxeles de la retícula original."""
-        return sum(w for _, _, w in self.pesos)
+        """Área del municipio en píxeles de la retícula original, sumando piezas."""
+        return sum(pieza.area for pieza in self.piezas)
 
 class BboxRecorte(BaseModel):
     min_x: int = Field(..., description="Minimum x coordinate")
@@ -91,7 +154,39 @@ class MedicionResultado(BaseModel):
             "instead of being counted as radiance."
         ),
     )
-    Bbox: Optional[BboxRecorte] = Field(None, description="Bounding box of the cropped image in the original tile")
+    Cuadrantes: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Tiles the municipality spans. More than one means the metrics were "
+            "aggregated across images; an empty list means the field predates "
+            "multi-tile support."
+        ),
+    )
+    Cuadrantes_faltantes: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Tiles that could not be read for this date: their pixels entered the "
+            "aggregate as NaN and were dropped, so this record covers only part of "
+            "the municipality and Fraccion_valida is below 1. Filter on this field "
+            "(or on Fraccion_valida) if your series does not admit partial records."
+        ),
+    )
+    Cuadrante_referencia: Optional[str] = Field(
+        None,
+        description=(
+            "Tile whose upper-left corner anchors Bbox and the cropped matrices: "
+            "the north-westernmost of Cuadrantes. With a single tile it is that "
+            "tile, so the coordinates mean what they always meant."
+        ),
+    )
+    Bbox: Optional[BboxRecorte] = Field(
+        None,
+        description=(
+            "Bounding box of the cropped image, in pixel coordinates of "
+            "Cuadrante_referencia. Coordinates beyond the tile side (2400) fall "
+            "in the tile to the east or south."
+        ),
+    )
     Filas: Optional[int] = Field(None, description="Number of rows in the cropped radiance matrix")
     Columnas: Optional[int] = Field(None, description="Number of columns in the cropped radiance matrix")
     Matriz_de_radianza: Optional[List[List[Optional[float]]]] = Field(

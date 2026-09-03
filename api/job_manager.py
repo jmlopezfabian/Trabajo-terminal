@@ -6,7 +6,7 @@ from typing import Literal
 
 from ntl.core.config import PIXELES_MUNICIPIOS, temp_path
 from ntl.core.downloader import download_file_async, find_file_async
-from ntl.radianza.extraccion import extract_radiance_matrix
+from ntl.radianza.extraccion import extract_radiance_matrix_mosaico
 from ntl.radianza.lotes import SatelliteImagesAsync
 from ntl.core.utils import load_coord_data, normalize_municipio, parse_date
 
@@ -108,37 +108,43 @@ async def run_matriz_job(job_id: str, municipio: str, fecha: date) -> None:
         coord_data = load_coord_data(municipio_norm, PIXELES_MUNICIPIOS)
         date_str = fecha.strftime("%d-%m-%y")
         year, day, date_obj = parse_date(date_str)
-        cuadrante = coord_data.cuadrante
+        # Un municipio puede ocupar hasta cuatro cuadrantes; se descargan todos
+        # y el recorte se compone en el marco del cuadrante de referencia.
+        cuadrantes = coord_data.cuadrantes
 
         import aiohttp
 
+        rutas: dict[str, str] = {}
         async with aiohttp.ClientSession() as session:
-            h5_url = await find_file_async(session, year, day, cuadrante)
-            if not h5_url:
-                state.status = "failed"
-                state.error = f"No se encontró archivo HDF5 para {year}-{day} ({cuadrante})"
-                return
+            for cuadrante in cuadrantes:
+                h5_url = await find_file_async(session, year, day, cuadrante)
+                if not h5_url:
+                    state.status = "failed"
+                    state.error = f"No se encontró archivo HDF5 para {year}-{day} ({cuadrante})"
+                    return
 
-            save_path = str(temp_path(f"{date_obj}_{cuadrante}_matriz.h5"))
-            downloaded_path = await download_file_async(session, h5_url, save_path)
-            if not downloaded_path:
-                state.status = "failed"
-                state.error = f"Error descargando archivo HDF5"
-                return
+                save_path = str(temp_path(f"{date_obj}_{cuadrante}_matriz.h5"))
+                downloaded_path = await download_file_async(session, h5_url, save_path)
+                if not downloaded_path:
+                    state.status = "failed"
+                    state.error = f"Error descargando archivo HDF5 de {cuadrante}"
+                    return
+                rutas[cuadrante] = downloaded_path
 
         state.progress = "Extrayendo matrices..."
-        result = extract_radiance_matrix(
-            downloaded_path,
-            list(coord_data.pesos),
+        result = extract_radiance_matrix_mosaico(
+            rutas,
+            coord_data.piezas,
             date_obj,
             municipio_norm,
         )
 
-        try:
-            if os.path.exists(downloaded_path):
-                os.remove(downloaded_path)
-        except OSError:
-            pass
+        for ruta in rutas.values():
+            try:
+                if os.path.exists(ruta):
+                    os.remove(ruta)
+            except OSError:
+                pass
 
         if result is None:
             state.status = "failed"

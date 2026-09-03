@@ -7,7 +7,7 @@ from typing import Callable
 from ..core.config import PIXELES_MUNICIPIOS, TEMP_DIR, data_path, temp_path
 from ..core.utils import normalize_municipio, parse_date, load_coord_data
 from ..core.downloader import find_file_async, download_file_async
-from .extraccion import process_image
+from .extraccion import process_image_mosaico
 from ..core.models import MedicionResultado
 
 def chunk_list(lst, chunk_size):
@@ -138,57 +138,75 @@ class SatelliteImagesAsync:
         
         return None
 
+    def _borrar_cuadrante(self, cache_key, ruta):
+        """Borra un HDF5 ya consumido y lo saca del cache, que si no apuntaría a la nada."""
+        self.cache_h5_files.pop(cache_key, None)
+        try:
+            if ruta and os.path.exists(ruta):
+                os.remove(ruta)
+                print(f"Archivo eliminado: {ruta}")
+        except Exception as e:
+            print(f"Error eliminando archivo {ruta}: {e}")
+
     async def get_measures_for_date(self, session, date_str):
-        """Obtiene medidas para todos los municipios en una fecha específica"""
+        """
+        Medidas de todos los municipios en una fecha.
+
+        Un municipio puede necesitar más de un cuadrante —la retícula se corta
+        cada 10 grados, sin mirar fronteras administrativas— y un cuadrante
+        suele servir a varios municipios. Así que no se agrupa por "el cuadrante
+        del municipio": se cuenta cuántos municipios quedan por procesar de cada
+        cuadrante y la imagen se borra en cuanto ese contador llega a cero. Cada
+        archivo pesa cientos de megas; mantenerlos todos en disco hasta el final
+        era la alternativa fácil y la que llena el volumen.
+        """
         year, day, date_obj = parse_date(date_str)
         results = []
-        
-        # Agrupar municipios por cuadrante para optimizar descargas
-        municipios_por_cuadrante = {}
-        for municipio in self.municipios:
-            coord_data = self.coord_data_dict[municipio]
-            cuadrante = coord_data.cuadrante
-            if cuadrante not in municipios_por_cuadrante:
-                municipios_por_cuadrante[cuadrante] = []
-            municipios_por_cuadrante[cuadrante].append({
-                'nombre': municipio,
-                'pesos': coord_data.pesos
-            })
-        
-        # Procesar cada cuadrante
-        for cuadrante, municipios_in_cuadrante in municipios_por_cuadrante.items():
-            # Descargar archivo H5 una sola vez para todos los municipios del cuadrante
-            h5_path = await self._download_and_cache_h5(session, year, day, cuadrante, date_obj)
-            if not h5_path:
-                continue
-            
-            # Procesar cada municipio con el mismo archivo H5
-            for municipio_data in municipios_in_cuadrante:
-                try:
-                    datos = process_image(
-                        h5_path, 
-                        municipio_data['pesos'],
-                        date_obj, 
-                        municipio_data['nombre'],
-                        delete_file=False,  # No eliminar el archivo hasta procesar todos los municipios
-                        cuadrante=cuadrante,  # para verificar la georreferencia del archivo
-                    )
-                    if datos:
-                        results.append(datos.model_dump())
-                        print(f"✅ Procesado: {municipio_data['nombre']} - {date_obj}")
-                    else:
-                        print(f"⚠️ Sin datos para: {municipio_data['nombre']} - {date_obj}")
-                except Exception as e:
-                    print(f"❌ Error procesando {municipio_data['nombre']} para {date_obj}: {e}")
-            
-            # Eliminar el archivo H5 después de procesar todos los municipios del cuadrante
+
+        cuadrantes_por_municipio = {
+            municipio: self.coord_data_dict[municipio].cuadrantes
+            for municipio in self.municipios
+        }
+        pendientes = {}
+        for cuadrantes in cuadrantes_por_municipio.values():
+            for cuadrante in cuadrantes:
+                pendientes[cuadrante] = pendientes.get(cuadrante, 0) + 1
+
+        # Procesar juntos los municipios que comparten cuadrantes hace que los
+        # contadores lleguen a cero pronto y el disco no acumule imágenes.
+        orden = sorted(self.municipios, key=lambda m: cuadrantes_por_municipio[m])
+
+        for municipio in orden:
+            cuadrantes = cuadrantes_por_municipio[municipio]
+            rutas = {}
+            for cuadrante in cuadrantes:
+                rutas[cuadrante] = await self._download_and_cache_h5(
+                    session, year, day, cuadrante, date_obj
+                )
+
             try:
-                if os.path.exists(h5_path):
-                    os.remove(h5_path)
-                    print(f"Archivo eliminado después de procesar todos los municipios: {h5_path}")
+                datos = process_image_mosaico(
+                    rutas,
+                    self.coord_data_dict[municipio].piezas,
+                    date_obj,
+                    municipio,
+                    # El borrado lo decide el contador, no el municipio: la
+                    # misma imagen le sirve al siguiente.
+                    delete_files=False,
+                )
+                if datos:
+                    results.append(datos.model_dump())
+                    print(f"✅ Procesado: {municipio} - {date_obj}")
+                else:
+                    print(f"⚠️ Sin datos para: {municipio} - {date_obj}")
             except Exception as e:
-                print(f"Error eliminando archivo {h5_path}: {e}")
-        
+                print(f"❌ Error procesando {municipio} para {date_obj}: {e}")
+
+            for cuadrante in cuadrantes:
+                pendientes[cuadrante] -= 1
+                if pendientes[cuadrante] == 0:
+                    self._borrar_cuadrante(f"{year}_{day}_{cuadrante}", rutas.get(cuadrante))
+
         return results
 
     async def run(self, fechas, chunks=None, save_progress_enabled=True, on_progress: Callable[[str], None] | None = None):
