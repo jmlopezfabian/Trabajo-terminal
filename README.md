@@ -194,6 +194,52 @@ vino vacío— que se retiran con `python scripts/purgar_registros_invalidos.py`
 
 La API usa `ntl.radianza`, que descarga de forma asíncrona y agrupa por cuadrante, para mejorar el rendimiento cuando se procesan muchas fechas o municipios.
 
+### Municipios repartidos entre varios cuadrantes
+
+La retícula de Black Marble se corta cada 10 grados por conveniencia del archivo,
+no por ninguna frontera administrativa. Un municipio pegado a un múltiplo de 10 en
+longitud cae en dos cuadrantes, en latitud cae en dos, y cerca de una esquina de la
+retícula cae en cuatro. Esos municipios se procesan componiendo las imágenes:
+
+- La cobertura se calcula una vez sobre una **retícula global** anclada en (-180, 90)
+  y se reparte en piezas, una por cuadrante. Como el lado del cuadrante son 2400
+  píxeles enteros, ningún píxel se parte entre dos imágenes: la suma de las áreas de
+  las piezas es exactamente el área sin cortar.
+- Las métricas **no** se promedian entre cuadrantes. Se juntan los pares
+  (radianza, cobertura) de todos los píxeles y se agregan una sola vez, que es la
+  única forma de que los percentiles signifiquen algo.
+- `Cuadrantes` lista las imágenes que intervinieron y `Cuadrante_referencia` dice en
+  el marco de cuál están `Bbox` y las matrices del recorte (el del extremo noroeste).
+  Una columna mayor que 2400 cae en el cuadrante de al lado.
+- Si una de las imágenes no se puede leer, **sus píxeles entran como NaN** y salen
+  del agregado. El registro se produce igualmente, parcial y marcado como tal:
+  `Cuadrantes_faltantes` dice qué imágenes faltaron y `Fraccion_valida` qué parte
+  del territorio llegó a medirse; en la matriz del recorte el hueco queda como
+  `null`, no como cero. La corrida avisa por consola con el porcentaje de área
+  perdida. **Si tu serie no admite registros parciales, fíltralos por
+  `Fraccion_valida < 1` o por `Cuadrantes_faltantes` no vacío**; el pipeline no los
+  descarta por su cuenta, porque para muchos análisis un municipio con el 98% de su
+  territorio medido sigue sirviendo.
+
+Un polígono que cruza el antimeridiano se rechaza: ese caso hay que partirlo en dos
+antes de repartirlo.
+
+### Municipios con islas, exclaves o enclaves
+
+Un municipio tampoco tiene por qué ser un solo polígono. Puede tener islas o
+exclaves —GeoJSON lo publica entonces como `MultiPolygon`— y puede tener huecos,
+cuando otro municipio queda enclavado dentro de su territorio.
+
+`extraer_geometria()` lee el límite completo, con sus partes y sus huecos, y es lo
+que consume el cálculo de cobertura: una isla suma área aunque caiga en otro
+cuadrante, y un enclave la resta. La cobertura se recorre parte por parte, porque
+la envolvente de un municipio con una isla lejana incluye todo lo que hay en medio.
+
+`extraer_coordenadas()` sigue existiendo para lo que solo necesita un contorno
+—centroides, distancias, dibujos— pero **falla** ante un municipio multiparte o con
+huecos en vez de devolver una de las partes como si fuera el municipio entero, que
+es lo que hacía antes sin decirlo.
+
 ---
 
 ## Ejemplos de uso desde código
