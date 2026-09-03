@@ -31,11 +31,9 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ntl.core.config import RUTA_MUNICIPIOS
-from ntl.geometria.cobertura import cobertura_exacta, poligono_en_pixeles
+from ntl.geometria.mosaico import cobertura_por_cuadrante
 from ntl.core.utils import (
-    cuadrante_de_coordenadas,
-    esquina_superior_izquierda,
-    extraer_coordenadas,
+    extraer_geometria,
     normalize_municipio,
 )
 
@@ -49,29 +47,61 @@ SALIDA_POR_DEFECTO = os.path.join(
 )
 
 
-def cobertura_de_municipio(nombre: str, cuadrante: str) -> list[list]:
+def cobertura_de_municipio(nombre: str) -> dict[str, list[list]]:
     """
-    Devuelve las tripletas (x, y, w) del municipio en la retícula del cuadrante.
+    Devuelve la cobertura del municipio repartida por cuadrante: {cuadrante: [(x, y, w)]}.
 
-    La cobertura se calcula por intersección geométrica: sin factor de
-    subdivisión y sin ningún peso que elegir para el trazo del borde.
+    La cobertura se calcula por intersección geométrica sobre la retícula
+    global, sin factor de subdivisión y sin ningún peso que elegir para el trazo
+    del borde. El cuadrante deja de ser un dato del municipio y pasa a ser una
+    consecuencia de dónde caen sus píxeles: un municipio a caballo entre dos
+    imágenes produce dos piezas en vez de un error.
+
+    Se parte de la geometría completa, con sus islas y sus huecos. Un enclave de
+    otro municipio dentro del territorio resta área, y una isla la suma aunque
+    caiga en otro cuadrante.
     """
-    coordenadas = extraer_coordenadas(nombre)
-    if coordenadas is None:
+    geometria = extraer_geometria(nombre)
+    if geometria is None:
         raise ValueError(f"No se encontraron coordenadas para el municipio: {nombre}")
 
-    upper_left = esquina_superior_izquierda(cuadrante)
-    poligono = poligono_en_pixeles(coordenadas, upper_left, FORMA_CUADRANTE)
-    pesos, fila_0, columna_0 = cobertura_exacta(poligono)
+    piezas = cobertura_por_cuadrante(geometria, FORMA_CUADRANTE)
+    return {c: [[int(x), int(y), w] for x, y, w in pesos] for c, pesos in piezas.items()}
 
-    # Una esquina del polígono puede rozar una celda y dejar una cobertura de
-    # 1e-8; al redondear queda en 0.0 y sobra, porque no aporta área ni valor.
-    filas, columnas = np.nonzero(pesos)
-    tripletas = [
-        [int(x) + columna_0, int(y) + fila_0, round(float(pesos[y, x]), 6)]
-        for y, x in zip(filas, columnas)
-    ]
-    return [t for t in tripletas if t[2] > 0]
+
+def entrada_de_tabla(clave: str, piezas: dict[str, list[list]]) -> dict:
+    """
+    Registro que se escribe en el JSON.
+
+    Con un solo cuadrante conserva la forma de siempre —``cuadrante`` y
+    ``pesos``— para no reescribir de arriba abajo un archivo que solo cambia de
+    contenedor; con varios usa ``piezas``. El modelo lee las dos.
+    """
+    if len(piezas) == 1:
+        (cuadrante, pesos), = piezas.items()
+        return {"nombre": clave, "cuadrante": cuadrante, "pesos": pesos}
+    return {
+        "nombre": clave,
+        "piezas": [{"cuadrante": c, "pesos": p} for c, p in piezas.items()],
+    }
+
+
+def area_previa_de(anterior: dict) -> tuple[float, bool, set]:
+    """Área, si traía coberturas, y píxeles (cuadrante, x, y) del registro previo."""
+    entradas = []
+    if anterior.get("piezas"):
+        for pieza in anterior["piezas"]:
+            entradas += [(pieza["cuadrante"], *p) for p in pieza["pesos"]]
+    else:
+        cuadrante = anterior.get("cuadrante")
+        for p in anterior.get("pesos") or anterior.get("coordenadas_pixeles", []):
+            entradas.append((cuadrante, *p))
+
+    if not entradas:
+        return 0.0, False, set()
+    era_cobertura = len(entradas[0]) == 4
+    area = sum(e[3] for e in entradas) if era_cobertura else float(len(entradas))
+    return area, era_cobertura, {(e[0], e[1], e[2]) for e in entradas}
 
 
 def main() -> int:
@@ -95,37 +125,34 @@ def main() -> int:
         nombre = feature["properties"]["NOMGEO"]
         clave = normalize_municipio(nombre)
 
-        # El cuadrante se deduce del propio polígono. Antes se heredaba del
-        # archivo previo, así que un municipio nuevo se omitía en silencio y la
-        # tabla no podía crecer sin editarla a mano.
+        # Los cuadrantes se deducen del propio polígono. Antes se heredaba el
+        # cuadrante del archivo previo, así que un municipio nuevo se omitía en
+        # silencio y la tabla no podía crecer sin editarla a mano; y un
+        # municipio que cruzaba de cuadrante se omitía siempre.
         try:
-            cuadrante = cuadrante_de_coordenadas(extraer_coordenadas(nombre))
+            piezas = cobertura_de_municipio(nombre)
         except ValueError as e:
             print(f"AVISO: {nombre} se omite: {e}")
             continue
 
-        heredado = previo.get(clave, {}).get("cuadrante")
-        if heredado and heredado != cuadrante:
-            print(f"  AVISO: {nombre} estaba en {heredado} y sus coordenadas "
-                  f"caen en {cuadrante}")
+        if not piezas:
+            print(f"AVISO: {nombre} se omite: no cubre ningún píxel de la retícula")
+            continue
 
-        pesos = cobertura_de_municipio(nombre, cuadrante)
-        resultado[clave] = {
-            "nombre": clave,
-            "cuadrante": cuadrante,
-            "pesos": pesos,
-        }
-
-        area = sum(w for _, _, w in pesos)
-        frontera = sum(1 for _, _, w in pesos if w < 0.999)
         anterior = previo.get(clave, {})
-        entradas_previas = anterior.get("pesos") or anterior.get("coordenadas_pixeles", [])
-        area_previa = (
-            sum(p[2] for p in entradas_previas) if entradas_previas and len(entradas_previas[0]) == 3
-            else len(entradas_previas)
-        )
+        heredados = anterior.get("cuadrante")
+        if heredados and [heredados] != list(piezas):
+            print(f"  AVISO: {nombre} estaba en {heredados} y sus píxeles caen "
+                  f"en {', '.join(piezas)}")
+
+        resultado[clave] = entrada_de_tabla(clave, piezas)
+
+        area = sum(w for pesos in piezas.values() for _, _, w in pesos)
+        frontera = sum(1 for pesos in piezas.values() for _, _, w in pesos if w < 0.999)
+        area_previa, era_cobertura, anteriores = area_previa_de(anterior)
         cambio = (area / area_previa - 1) * 100 if area_previa else float("nan")
-        print(f"{nombre:26s} {cuadrante}  area {area:8.2f} px  "
+        etiqueta = ", ".join(piezas) if len(piezas) > 1 else next(iter(piezas))
+        print(f"{nombre:26s} {etiqueta:26s}  area {area:8.2f} px  "
               f"({frontera:4d} de frontera)   antes {area_previa:8.2f}  {cambio:+6.1f}%")
 
         # Qué se considera un cambio aceptable depende de con qué se compara.
@@ -133,7 +160,6 @@ def main() -> int:
         # incluye la frontera. Frente a una tabla que ya trae coberturas, debe
         # coincidir salvo por el error de la aproximación anterior, que a k=32
         # era de milésimas.
-        era_cobertura = bool(entradas_previas) and len(entradas_previas[0]) == 3
         if area_previa:
             if era_cobertura:
                 if abs(area / area_previa - 1) > 0.01:
@@ -147,8 +173,8 @@ def main() -> int:
         # Un píxel puede desaparecer si el método anterior lo incluía por error.
         # El relleno viejo llegaba a marcar como interiores bolsas que el
         # polígono cierra sin llegar a tocarlas.
-        anteriores = {(p[0], p[1]) for p in entradas_previas}
-        perdidos = sorted(anteriores - {(x, y) for x, y, _ in pesos})
+        actuales = {(c, x, y) for c, pesos in piezas.items() for x, y, _ in pesos}
+        perdidos = sorted(anteriores - actuales)
         if perdidos:
             print(f"  AVISO: {len(perdidos)} píxeles del archivo previo tienen cobertura "
                   f"nula y salen: {perdidos[:5]}{' ...' if len(perdidos) > 5 else ''}")

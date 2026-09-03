@@ -1,0 +1,126 @@
+{
+  "type": "FeatureCollection",
+  "comment": "Límites sintéticos para el caso multiparte. Las coordenadas están puestas a mano sobre la esquina de la retícula donde se juntan h08v07, h09v07, h08v08 y h09v08 (lon -90, lat 10), para que el caso de las islas y el de los cuadrantes se crucen.",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "NOMGEO": "Continental con isla" },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-95.0, 15.0],
+              [-94.0, 15.0],
+              [-94.0, 14.0],
+              [-95.0, 14.0],
+              [-95.0, 15.0]
+            ]
+          ],
+          [
+            [
+              [-93.5, 14.75],
+              [-93.0, 14.75],
+              [-93.0, 14.25],
+              [-93.5, 14.25],
+              [-93.5, 14.75]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "NOMGEO": "Con enclave" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-95.0, 15.0],
+            [-93.0, 15.0],
+            [-93.0, 13.0],
+            [-95.0, 13.0],
+            [-95.0, 15.0]
+          ],
+          [
+            [-94.5, 14.5],
+            [-93.5, 14.5],
+            [-93.5, 13.5],
+            [-94.5, 13.5],
+            [-94.5, 14.5]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "NOMGEO": "Isla en otro cuadrante" },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-91.0, 11.0],
+              [-90.5, 11.0],
+              [-90.5, 10.5],
+              [-91.0, 10.5],
+              [-91.0, 11.0]
+            ]
+          ],
+          [
+            [
+              [-89.5, 9.5],
+              [-89.0, 9.5],
+              [-89.0, 9.0],
+              [-89.5, 9.0],
+              [-89.5, 9.5]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "NOMGEO": "Dos partes que se tocan" },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-95.0, 15.0],
+              [-94.5, 15.0],
+              [-94.5, 14.5],
+              [-95.0, 14.5],
+              [-95.0, 15.0]
+            ]
+          ],
+          [
+            [
+              [-94.5, 15.0],
+              [-94.0, 15.0],
+              [-94.0, 14.5],
+              [-94.5, 14.5],
+              [-94.5, 15.0]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "NOMGEO": "Simple" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-95.0, 15.0],
+            [-94.0, 15.0],
+            [-94.0, 14.0],
+            [-95.0, 14.0],
+            [-95.0, 15.0]
+          ]
+        ]
+      }
+    }
+  ]
+}

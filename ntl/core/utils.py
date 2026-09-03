@@ -1,6 +1,8 @@
 import json
 import re
 import numpy as np
+from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry.base import BaseGeometry
 from datetime import datetime
 from typing import List, Optional, Tuple
 
@@ -34,21 +36,87 @@ def load_coord_data(municipio: str, path: str) -> CoordenadasPixeles:
     return CoordenadasPixeles(**data[municipio])
 
 
-def extraer_coordenadas(nombre_delegacion: str) -> Optional[np.ndarray]:
-    """Extrae las coordenadas del polígono de un municipio desde el archivo de límites"""
+def _poligono_de_geojson(geometria: dict) -> Polygon | MultiPolygon:
+    """
+    Geometría de shapely a partir de la de GeoJSON, con sus huecos y sus partes.
+
+    Un municipio no tiene por qué ser un polígono simple. Puede tener islas o
+    exclaves —y entonces GeoJSON lo publica como MultiPolygon— y puede tener
+    huecos, cuando otro municipio queda enclavado dentro. En GeoJSON los anillos
+    a partir del primero son huecos, no partes.
+    """
+    tipo = geometria["type"]
+    coordenadas = geometria["coordinates"]
+
+    if tipo == "Polygon":
+        return Polygon(coordenadas[0], coordenadas[1:])
+    if tipo == "MultiPolygon":
+        return MultiPolygon([(parte[0], parte[1:]) for parte in coordenadas])
+    raise ValueError(
+        f"Geometría de tipo {tipo!r}: solo se admiten Polygon y MultiPolygon."
+    )
+
+
+def extraer_geometria(nombre_delegacion: str) -> Optional[Polygon | MultiPolygon]:
+    """
+    Límite de un municipio como geometría, con todas sus partes y sus huecos.
+
+    Es lo que `extraer_coordenadas` no podía expresar. Aquella devolvía
+    ``coordinates[0]``, que en un Polygon es el anillo exterior —descartando los
+    huecos, así que el área salía de más— y en un MultiPolygon es la lista de
+    anillos de la *primera parte*: un arreglo de tres dimensiones cuya columna 0
+    no son las longitudes sino el primer anillo entero. Con eso, el cuadrante se
+    deducía de una mezcla de longitudes y latitudes, y sin fallar.
+
+    Devuelve None si el municipio no está en el archivo, para no cambiar la
+    forma en que los llamadores tratan ese caso.
+    """
     try:
         with open(RUTA_MUNICIPIOS, "r") as file:
             datos = json.load(file)
 
         for data in datos["features"]:
             if data["properties"]["NOMGEO"] == nombre_delegacion:
-                return np.array(data["geometry"]["coordinates"][0])
+                geometria = _poligono_de_geojson(data["geometry"])
+                if not geometria.is_valid:
+                    # Un polígono que se cruza a sí mismo da áreas de
+                    # intersección sin sentido; buffer(0) es la reparación
+                    # canónica en shapely y no mueve la frontera.
+                    geometria = geometria.buffer(0)
+                return geometria
 
         print(f"No se encontraron coordenadas para la delegación: {nombre_delegacion}")
         return None
     except Exception as e:
         print(f"Error al extraer coordenadas: {e}")
         return None
+
+
+def extraer_coordenadas(nombre_delegacion: str) -> Optional[np.ndarray]:
+    """
+    Vértices del contorno de un municipio de una sola pieza y sin huecos.
+
+    Se conserva para los usos que solo necesitan un contorno —centroides,
+    distancias, dibujos—. Para calcular cobertura usa `extraer_geometria`: esta
+    función no puede representar islas ni enclaves, y falla en vez de devolver
+    una de las partes como si fuera el municipio entero.
+    """
+    geometria = extraer_geometria(nombre_delegacion)
+    if geometria is None:
+        return None
+
+    if isinstance(geometria, MultiPolygon):
+        raise ValueError(
+            f"{nombre_delegacion} tiene {len(geometria.geoms)} partes (islas o "
+            f"exclaves) y no cabe en un solo contorno. Usa extraer_geometria()."
+        )
+    if geometria.interiors:
+        raise ValueError(
+            f"{nombre_delegacion} tiene {len(geometria.interiors)} hueco(s) "
+            f"—un enclave dentro de su territorio— que un solo contorno no "
+            f"expresa. Usa extraer_geometria()."
+        )
+    return np.array(geometria.exterior.coords)
 
 
 def left_right_coords(hdf_file) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
@@ -107,29 +175,84 @@ def esquina_superior_izquierda(cuadrante: str) -> Tuple[float, float]:
     return (-180.0 + GRADOS_POR_CUADRANTE * h, 90.0 - GRADOS_POR_CUADRANTE * v)
 
 
-def cuadrante_de_coordenadas(coordenadas: np.ndarray) -> str:
+def envolvente(geometria) -> Tuple[float, float, float, float]:
     """
-    Cuadrante que contiene un polígono, derivado de sus propias coordenadas.
+    (lon_min, lat_min, lon_max, lat_max) de una geometría o de un arreglo de vértices.
 
-    Sirve para no heredar el identificador de una tabla previa. Falla si el
-    polígono cruza de cuadrante: ese caso necesita leer dos imágenes y componer
-    el resultado, y devolver uno de los dos en silencio recortaría el municipio.
+    Las dos formas conviven porque el proyecto trabajaba con arreglos de
+    vértices antes de que un municipio pudiera tener islas.
     """
-    lon_min, lon_max = float(coordenadas[:, 0].min()), float(coordenadas[:, 0].max())
-    lat_min, lat_max = float(coordenadas[:, 1].min()), float(coordenadas[:, 1].max())
+    if isinstance(geometria, BaseGeometry):
+        return geometria.bounds
+    coordenadas = np.asarray(geometria)
+    return (float(coordenadas[:, 0].min()), float(coordenadas[:, 1].min()),
+            float(coordenadas[:, 0].max()), float(coordenadas[:, 1].max()))
+
+
+def cuadrantes_de_coordenadas(coordenadas) -> List[str]:
+    """
+    Todos los cuadrantes que la envolvente del polígono toca, de arriba a abajo
+    y de izquierda a derecha.
+
+    Un municipio no tiene por qué caber en un cuadrante: la retícula de Black
+    Marble se corta cada 10 grados por conveniencia de publicación, no por
+    ninguna frontera administrativa. Un municipio pegado a un múltiplo de 10 en
+    longitud cae en dos, en latitud cae en dos, y cerca de una esquina de la
+    retícula cae en cuatro.
+
+    Devuelve los cuadrantes de la *envolvente*, que es una cota superior: la
+    geometría puede no llegar a tocar alguno de ellos. Quien reparte la
+    cobertura descarta los que se quedan sin píxeles, para no descargar 500 MB
+    de una imagen que no aporta nada.
+
+    Raises:
+        ValueError: Si el polígono cruza el antimeridiano. Ahí la envolvente
+            deja de decir nada útil —abarcaría el planeta entero— y el caso
+            necesita partir el polígono, no repartirlo.
+    """
+    lon_min, lat_min, lon_max, lat_max = envolvente(coordenadas)
+
+    if lon_max - lon_min > 180.0:
+        raise ValueError(
+            f"El polígono abarca {lon_max - lon_min:.1f} grados de longitud: "
+            f"parece cruzar el antimeridiano. Ese caso hay que partirlo en dos "
+            f"polígonos antes de repartirlo por cuadrantes."
+        )
 
     h_min = int((lon_min + 180.0) // GRADOS_POR_CUADRANTE)
     h_max = int((lon_max + 180.0) // GRADOS_POR_CUADRANTE)
     v_min = int((90.0 - lat_max) // GRADOS_POR_CUADRANTE)
     v_max = int((90.0 - lat_min) // GRADOS_POR_CUADRANTE)
 
-    if h_min != h_max or v_min != v_max:
+    # Un polígono que termina justo en el borde (lon_max = -100.0 exacto) no
+    # entra en el cuadrante siguiente: su última columna de píxeles es la que
+    # acaba en el borde, y esa pertenece al cuadrante de la izquierda.
+    if h_max > h_min and (lon_max + 180.0) % GRADOS_POR_CUADRANTE == 0:
+        h_max -= 1
+    if v_max > v_min and (90.0 - lat_min) % GRADOS_POR_CUADRANTE == 0:
+        v_max -= 1
+
+    return [f"h{h:02d}v{v:02d}"
+            for v in range(v_min, v_max + 1)
+            for h in range(h_min, h_max + 1)]
+
+
+def cuadrante_de_coordenadas(coordenadas: np.ndarray) -> str:
+    """
+    Cuadrante único que contiene un polígono, derivado de sus propias coordenadas.
+
+    Sirve para no heredar el identificador de una tabla previa. Falla si el
+    polígono cruza de cuadrante: quien tenga que soportar ese caso debe usar
+    `cuadrantes_de_coordenadas` y trabajar con las piezas, porque devolver uno
+    de los cuadrantes en silencio recortaría el municipio.
+    """
+    cuadrantes = cuadrantes_de_coordenadas(coordenadas)
+    if len(cuadrantes) > 1:
         raise ValueError(
-            f"El polígono cruza de cuadrante: h{h_min:02d}-h{h_max:02d} "
-            f"v{v_min:02d}-v{v_max:02d}. Componer varios cuadrantes no está "
-            f"implementado."
+            f"El polígono cruza de cuadrante: toca {', '.join(cuadrantes)}. "
+            f"Usa cuadrantes_de_coordenadas() para repartirlo."
         )
-    return f"h{h_min:02d}v{v_min:02d}"
+    return cuadrantes[0]
 
 
 def verificar_georreferencia(hdf_file, cuadrante: str, forma: Tuple[int, int] | None = None,

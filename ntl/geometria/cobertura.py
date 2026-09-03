@@ -12,7 +12,9 @@ frontera atraviesa crece con el perímetro mientras el interior crece con el ár
 from typing import Tuple
 
 import numpy as np
+from shapely.affinity import affine_transform
 from shapely.geometry import Polygon, box
+from shapely.geometry.base import BaseGeometry
 from shapely.prepared import prep
 
 from ..core.metricas import metricas_ponderadas as _metricas_nucleo
@@ -20,23 +22,42 @@ from ..core.metricas import metricas_ponderadas as _metricas_nucleo
 GRADOS_POR_CUADRANTE = 10.0
 
 
-def poligono_en_pixeles(coordenadas_municipio: np.ndarray,
+def poligono_en_pixeles(coordenadas_municipio,
                         upper_left: Tuple[float, float],
-                        shape: Tuple[int, int]) -> Polygon:
-    """Convierte el polígono lon/lat a coordenadas de píxel continuas de la retícula."""
+                        shape: Tuple[int, int]):
+    """
+    Lleva el límite del municipio de lon/lat a coordenadas de píxel continuas.
+
+    Acepta una geometría de shapely —con sus islas y sus huecos— o un arreglo de
+    vértices, que es como lo pedía el proyecto antes de que un municipio pudiera
+    tener más de una parte. La transformación es afín, así que se aplica igual a
+    un polígono simple que a uno con veinte islas.
+    """
     resolucion_x = GRADOS_POR_CUADRANTE / shape[1]
     resolucion_y = GRADOS_POR_CUADRANTE / shape[0]
+
+    if isinstance(coordenadas_municipio, BaseGeometry):
+        # x = (lon - ul_x) / res_x ;  y = (ul_y - lat) / res_y
+        return affine_transform(coordenadas_municipio, [
+            1 / resolucion_x, 0.0,
+            0.0, -1 / resolucion_y,
+            -upper_left[0] / resolucion_x, upper_left[1] / resolucion_y,
+        ])
+
+    coordenadas_municipio = np.asarray(coordenadas_municipio)
     xs = (coordenadas_municipio[:, 0] - upper_left[0]) / resolucion_x
     ys = (upper_left[1] - coordenadas_municipio[:, 1]) / resolucion_y
     return Polygon(np.column_stack([xs, ys]))
 
 
-def cobertura_exacta(poly_px: Polygon) -> Tuple[np.ndarray, int, int]:
+def cobertura_exacta(poly_px) -> Tuple[np.ndarray, int, int]:
     """
     Fracción de cada píxel que el polígono cubre, sin discretizar.
 
     Args:
-        poly_px: Polígono del municipio en coordenadas de píxel continuas
+        poly_px: Geometría del municipio en coordenadas de píxel continuas.
+            Un municipio con islas o con huecos entra aquí igual que uno
+            simple: la intersección con la celda ya los tiene en cuenta.
 
     Returns:
         Tuple con (matriz de pesos en [0,1], fila y columna del origen del
